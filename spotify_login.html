@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <me    function getParam(name) { return new URLSearchParams(window.location.search).get(name); }
+
+    // Client ID - MUST be loaded from database, no hardcoded fallback
+    let clientId = null;
+    
+    // redirect_uri must match exactly with dashboard settings
+    const redirectUri = window.location.origin + '/spotify_login.html';
+    const scopes = 'user-read-playback-state user-modify-playbook-state user-read-currently-playing streaming user-read-email user-read-private';
+    const loginBtn = document.getElementById('loginBtn');
+    const msg = document.getElementById('msg');"utf-8">
+  <title>Spotify Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { background: #181818; color: #f3f3f3; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    #loginBox { background: #222; padding: 2rem; border-radius: 1rem; box-shadow: 0 0 20px #0008; }
+    button { background: #1DB954; color: #181818; border: none; border-radius: 0.3rem; padding: 0.7rem 1.5rem; font-size: 1.1rem; cursor: pointer; }
+    button:hover { background: #1ed760; }
+    #msg { margin-top: 1rem; color: #1DB954; }
+  </style>
+</head>
+<body>
+  <div id="loginBox">
+    <h2>Spotify Login</h2>
+    <button id="loginBtn">Mit Spotify verbinden</button>
+    <div id="msg"></div>
+  </div>
+  <script>
+    // Auto-redirect from /spotify_player to /spotify_login.html (once per session)
+    if (window.location.pathname === '/spotify_player' && !sessionStorage.getItem('redirectedToHtml')) {
+      sessionStorage.setItem('redirectedToHtml', '1');
+      window.location.replace(window.location.origin + '/spotify_login.html' + window.location.search);
+    } else {
+      sessionStorage.removeItem('redirectedToHtml');
+    }
+
+    // Generate RFC 7636 compliant code verifier (43-128 chars, allowed chars only)
+    function generateCodeVerifier(length = 128) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+      let array = new Uint8Array(length);
+      window.crypto.getRandomValues(array);
+      return Array.from(array).map(x => chars.charAt(x % chars.length)).join('');
+    }
+
+    // SHA256 hash with base64url encoding
+    async function pkceChallengeFromVerifier(v) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(v);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+
+    function getParam(name) { return new URLSearchParams(window.location.search).get(name); }
+
+    // Default Client ID - can be overridden via settings
+    const defaultClientId = '3540936081814d4bbe62d54da4bf0bfd';
+    let clientId = defaultClientId;
+    
+    // redirect_uri must match exactly with dashboard settings
+    const redirectUri = window.location.origin + '/spotify_login.html';
+    const scopes = 'user-read-playback-state user-modify-playback-state user-read-currently-playing streaming user-read-email user-read-private';
+    const loginBtn = document.getElementById('loginBtn');
+    const msg = document.getElementById('msg');
+
+    // Load Client ID from settings database
+    async function loadClientId() {
+      try {
+        const response = await fetch('http://127.0.0.1:3001/api/settings/spotify/clientId');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.value) {
+            clientId = data.value;
+            console.log('🎵 Using custom Spotify Client ID:', clientId.substring(0, 8) + '...');
+            return true;
+          } else {
+            console.error('❌ No Spotify Client ID configured in database!');
+            msg.innerHTML = '<p style="color: #ff6b6b;">❌ Keine Spotify Client ID konfiguriert!<br><br>Bitte gehen Sie zu den Admin-Einstellungen und konfigurieren Sie Ihre Spotify Client ID.</p>';
+            loginBtn.disabled = true;
+            return false;
+          }
+        } else {
+          console.error('❌ Could not load Spotify Client ID from database');
+          msg.innerHTML = '<p style="color: #ff6b6b;">❌ Fehler beim Laden der Client ID aus der Datenbank.</p>';
+          loginBtn.disabled = true;
+          return false;
+        }
+      } catch (error) {
+        console.error('❌ Failed to load Spotify Client ID:', error);
+        msg.innerHTML = '<p style="color: #ff6b6b;">❌ Verbindung zur Datenbank fehlgeschlagen.<br>Stellen Sie sicher, dass der Data-Server läuft.</p>';
+        loginBtn.disabled = true;
+        return false;
+      }
+    }
+
+    async function startAuth() {
+      // Check if Client ID is available
+      if (!clientId) {
+        console.error('❌ Cannot start auth: No Client ID available');
+        msg.innerHTML = '<p style="color: #ff6b6b;">❌ Kann nicht authentifizieren: Keine Client ID verfügbar.</p>';
+        return;
+      }
+      
+      const codeVerifier = generateCodeVerifier(128);
+      const codeChallenge = await pkceChallengeFromVerifier(codeVerifier);
+      sessionStorage.setItem('spotify_code_verifier', codeVerifier);
+      // Build authorization URL following Spotify specs
+      const params = new URLSearchParams({
+        response_type: 'code',
+        client_id: clientId,
+        scope: scopes,
+        redirect_uri: redirectUri,
+        code_challenge_method: 'S256',
+        code_challenge: codeChallenge
+      });
+      window.location.href = 'https://accounts.spotify.com/authorize?' + params.toString();
+    }
+
+    async function handleRedirect() {
+      const code = getParam('code');
+      const error = getParam('error');
+      if (error) {
+        msg.textContent = 'Spotify Fehler: ' + error;
+        return;
+      }
+      if (!code) return;
+      
+      // Check if Client ID is available for token exchange
+      if (!clientId) {
+        msg.innerHTML = '<p style="color: #ff6b6b;">❌ Keine Client ID verfügbar für Token-Austausch.</p>';
+        return;
+      }
+      
+      msg.textContent = 'Token wird abgerufen...';
+      const codeVerifier = sessionStorage.getItem('spotify_code_verifier');
+      if (!codeVerifier) { msg.textContent = 'Error: No code verifier found.'; return; }
+      // Token request following Spotify specs
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        client_id: clientId,
+        code_verifier: codeVerifier
+      });
+      try {
+        const res = await fetch('https://accounts.spotify.com/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body
+        });
+        const data = await res.json();
+        if (data.access_token) {
+          // Store both access token and refresh token
+          sessionStorage.setItem('spotify_access_token', data.access_token);
+          if (data.refresh_token) {
+            sessionStorage.setItem('spotify_refresh_token', data.refresh_token);
+          }
+          // Store expiry time (default 3600 seconds = 1 hour)
+          const expiryTime = Date.now() + ((data.expires_in || 3600) * 1000);
+          sessionStorage.setItem('spotify_token_expiry', expiryTime.toString());
+          
+          msg.textContent = 'Login erfolgreich! Du wirst weitergeleitet...';
+          
+          console.log('🎵 Spotify login successful, checking context...');
+          console.log('🎵 Window opener exists:', !!window.opener);
+          console.log('🎵 Window parent exists:', window.parent !== window);
+          
+          // Check if we're in a popup window
+          if (window.opener) {
+            // We're in a popup window - send message to opener
+            console.log('🎵 Sending message to popup opener...');
+            setTimeout(() => {
+              window.opener.postMessage({
+                type: 'spotify_login_success',
+                token: data.access_token,
+                refresh_token: data.refresh_token,
+                expires_in: data.expires_in
+              }, '*');
+              console.log('🎵 Message sent to opener');
+            }, 1000);
+          } else if (window.parent && window.parent !== window) {
+            // We're in an iframe - send message to parent
+            console.log('🎵 Sending message to iframe parent...');
+            setTimeout(() => {
+              window.parent.postMessage({
+                type: 'spotify_login_success',
+                token: data.access_token,
+                refresh_token: data.refresh_token,
+                expires_in: data.expires_in
+              }, '*');
+              console.log('🎵 Message sent to parent');
+            }, 1000);
+          } else {
+            // Normal redirect for standalone usage
+            console.log('🎵 Standalone mode - redirecting normally...');
+            setTimeout(()=>{
+              window.location = 'jukebox.html#spotify_token=' + encodeURIComponent(data.access_token);
+            }, 1000);
+          }
+        } else {
+          msg.textContent = 'Fehler beim Token-Abruf: ' + (data.error_description || JSON.stringify(data));
+        }
+      } catch(e) {
+        msg.textContent = 'Fehler: ' + e;
+      }
+    }
+
+    // Initialize the page
+    async function init() {
+      // Load Client ID first
+      await loadClientId();
+      
+      // Set up login button handler
+      loginBtn.onclick = startAuth;
+      
+      // Handle redirect if this is a callback
+      handleRedirect();
+    }
+
+    // Start initialization
+    init();
+  </script>
+</body>
+</html>

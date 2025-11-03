@@ -1,0 +1,7 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "webPort": 5500,
+    "dataPort": 3001
+  }
+}

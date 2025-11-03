@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nJukebox</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    function showTab(tabName) {
+      // Hide all tab contents
+      document.getElementById('settings-content').style.display = 'none';
+      document.getElementById('autolearn-content').style.display = 'none';
+      document.getElementById('reporting-content').style.display = 'none';
+      document.getElementById('theming-content').style.display = 'none';
+      
+      // Reset all tab buttons
+      document.getElementById('settingsTabBtn').style.background = '#2a2a2a';
+      document.getElementById('settingsTabBtn').style.color = '#ccc';
+      document.getElementById('autolearnTabBtn').style.background = '#2a2a2a';
+      document.getElementById('autolearnTabBtn').style.color = '#ccc';
+      document.getElementById('reportingTabBtn').style.background = '#2a2a2a';
+      document.getElementById('reportingTabBtn').style.color = '#ccc';
+      document.getElementById('themingTabBtn').style.background = '#2a2a2a';
+      document.getElementById('themingTabBtn').style.color = '#ccc';
+      
+      // Show selected tab content and highlight button
+      document.getElementById(tabName + '-content').style.display = 'block';
+      document.getElementById(tabName + 'TabBtn').style.background = 'var(--button-primary)';
+      document.getElementById(tabName + 'TabBtn').style.color = 'white';
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div id="header-left">
+      <button id="adminButton" title="Administrator">🔒</button>
+      <button id="lockButton" class="admin-only hidden" title="Logout Admin" data-i18n-title="ui.buttons.adminLogout">🔓</button>
+      <span id="spotifyStatusIcon" title="Spotify Verbindungsstatus">●</span>
+    </div>
+    <div id="search-container">
+      <input id="searchInput" type="text" placeholder="Search…" autocomplete="off" data-i18n-placeholder="ui.labels.searchPlaceholder">
+      <button id="touchKeyboardToggle" title="Touch-Tastatur">⌨</button>
+    </div>
+  </header>
+  <main>
+    <nav id="sideNav">
+      <button class="nav-tile" data-filter="new"><span class="icon">🌟</span><span class="label" data-i18n="ui.labels.new">Neu</span></button>
+      <button class="nav-tile" data-filter="artist"><span class="icon">👤</span><span class="label" data-i18n="ui.labels.interpret">Interpret</span></button>
+      <button class="nav-tile" data-filter="album"><span class="icon">💿</span><span class="label" data-i18n="ui.labels.album">Album</span></button>
+      <button class="nav-tile" data-filter="genre"><span class="icon">🎷</span><span class="label" data-i18n="ui.labels.genre">Genre</span></button>
+      <button class="nav-tile" data-filter="decade"><span class="icon">🕰️</span><span class="label" data-i18n="ui.labels.decade">Jahrzehnt</span></button>
+      <button class="nav-tile" data-filter="most-played"><span class="icon">📊</span><span class="label" data-i18n="ui.labels.topHits">Top Hits</span></button>
+    </nav>
+    <nav id="azNav">
+      <div id="azNavButtons"></div>
+    </nav>
+    <section id="content">
+      <div id="nowPlayingSection">
+        <canvas id="nowPlayingVisualizerCanvas" width="800" height="400"></canvas>
+        <h2 id="nowPlayingHeader" data-i18n="ui.labels.nowPlaying">Now playing</h2>
+        <div id="nowPlayingContainer">
+          <div id="nowPlayingActions" style="display: none;">
+            <!-- Actions hidden as requested -->
+          </div>
+          <div id="nowPlayingCard">
+            <img id="nowPlayingCover" src="assets/default_cover.png" alt="Albumcover">
+            <div id="nowPlayingDetails">
+              <div id="nowPlayingTitle"></div>
+              <div id="nowPlayingArtist"></div>
+              <div id="nowPlayingAlbum"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="libraryContainer">
+        <section id="library">
+          <ul id="libraryList" class="list"></ul>
+          <div id="libraryGrid" class="grid hidden"></div>
+          <ul id="localList" class="hidden"></ul>
+          <ul id="spotifyResults" class="hidden"></ul>
+        </section>
+      </div>
+    </section>
+    <section id="queue">
+      <h3 id="playlistHeader" data-i18n="ui.labels.playlist">Playlist</h3>
+      <div id="playlistContainer">
+        <ul id="queueList" class="playlist-items"></ul>
+        <button id="showMoreTracks" class="show-more-btn" style="display: none;">
+          <span>⬇</span>
+          <span class="more-text" data-i18n="ui.labels.moreTracksShow">Weitere Tracks anzeigen</span>
+        </button>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <div id="controls">
+      <img id="coverImage" src="assets/default_cover.png" alt="Cover">
+      <div id="nowPlayingInfo">
+        <div id="nowPlayingTitle"></div>
+        <div id="footerProgressContainer">
+          <span id="currentTime">0:00</span>
+          <div id="footerProgressBar">
+            <div id="footerProgressFill"></div>
+          </div>
+          <span id="totalTime">0:00</span>
+        </div>
+      </div>
+      <div id="controlButtons">
+        <button id="playButton" title="Abspielen">▶</button>
+        <button id="pauseButton" class="admin-only" title="Pause">⏸</button>
+        <button id="stopButton" class="admin-only" title="Stop">⏹</button>
+        <button id="skipControlButton" class="admin-only" title="" data-i18n-title="ui.buttons.skip">⏭</button>
+      </div>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" title="" data-i18n-title="ui.labels.volume">
+    </div>
+    <input type="range" id="progressBar" min="0" max="100" step="0.1" value="0" style="display: none;">
+    <canvas id="equalizerCanvas" height="60"></canvas>
+  </footer>
+  <div id="adminOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <button class="pin-close-btn" id="closePinPanel" title="" data-i18n-title="ui.buttons.close">✕</button>
+      <div id="pinPanel">
+        <p data-i18n="ui.labels.pinPrompt">Bitte PIN eingeben:</p>
+        <input type="password" id="adminPin" autocomplete="off" readonly>
+        <div class="pin-error-message" id="pinErrorMessage" data-i18n="ui.messages.wrongPin">Falsche PIN! Versuchen Sie es erneut.</div>
+        <div id="pinKeypad" class="pin-keypad">
+          <button class="pin-key" data-key="1">1</button>
+          <button class="pin-key" data-key="2">2</button>
+          <button class="pin-key" data-key="3">3</button>
+          <button class="pin-key" data-key="4">4</button>
+          <button class="pin-key" data-key="5">5</button>
+          <button class="pin-key" data-key="6">6</button>
+          <button class="pin-key" data-key="7">7</button>
+          <button class="pin-key" data-key="8">8</button>
+          <button class="pin-key" data-key="9">9</button>
+          <button class="pin-key pin-clear" data-key="clear">C</button>
+          <button class="pin-key" data-key="0">0</button>
+          <button class="pin-key pin-ok" data-key="ok">OK</button>
+        </div>
+      </div>
+      <div id="adminControls" class="hidden">
+        <h3 data-i18n="ui.labels.administrator">Administrator</h3>
+        
+        <!-- Admin Tab Navigation -->
+        <div style="display: flex; width: 100%; margin-bottom: 20px; border-bottom: 3px solid #333;">
+          <button onclick="showTab('settings')" id="settingsTabBtn" style="flex: 1; background: var(--button-primary); color: white; border: none; padding: 15px 25px; cursor: pointer; font-size: 1rem; border-radius: 12px 12px 0 0; margin-right: 6px;" data-i18n="ui.buttons.settings">⚙️ Einstellungen</button>
+          <button onclick="showTab('theming')" id="themingTabBtn" style="flex: 1; background: #2a2a2a; color: #ccc; border: none; padding: 15px 25px; cursor: pointer; font-size: 1rem; border-radius: 12px 12px 0 0; margin-right: 6px;" data-i18n="ui.labels.theming">🎨 Darstellung</button>
+          <button onclick="showTab('autolearn')" id="autolearnTabBtn" style="flex: 1; background: #2a2a2a; color: #ccc; border: none; padding: 15px 25px; cursor: pointer; font-size: 1rem; border-radius: 12px 12px 0 0; margin-right: 6px;" data-i18n="ui.labels.autoLearning">🤖 Auto-Learning</button>
+          <button onclick="showTab('reporting')" id="reportingTabBtn" style="flex: 1; background: #2a2a2a; color: #ccc; border: none; padding: 15px 25px; cursor: pointer; font-size: 1rem; border-radius: 12px 12px 0 0;" data-i18n="ui.labels.reporting">📊 Reporting</button>
+        </div>
+        
+        <!-- Settings Tab Content -->
+        <div id="settings-content" style="display: block;">
+          <div class="admin-content-grid">
+          <!-- Left Column -->
+          <div class="admin-column">
+            <!-- Spotify Settings -->
+            <div class="admin-section">
+              <h4 data-i18n="ui.labels.spotifySettings">Spotify-Einstellungen</h4>
+              <div style="margin-bottom: 8px; font-size: 0.9em; color: #666;" data-i18n="ui.labels.spotifyPremiumRequired">
+                Benötigt Spotify Premium Account
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap;">
+                <button id="spotifyLoginBtn" data-i18n="ui.buttons.spotifyConnected">Mit Spotify verbunden</button>
+                <button id="spotifyConfigBtn" data-i18n="ui.buttons.spotifyConfig">⚙️ Konfiguration</button>
+                <div id="spotifyStatus" style="color: var(--primary-color); font-size: 0.9em;" data-i18n="ui.labels.playerReady">Player bereit</div>
+              </div>
+            </div>
+            
+            <!-- Language Selection -->
+            <div class="admin-section">
+              <h4 data-i18n="ui.labels.language">🌐 Sprache</h4>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <select id="languageSelect" style="padding: 6px 12px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 0.9em; width: 120px;">
+                  <option value="de">🇩🇪 Deutsch</option>
+                  <option value="en">🇺🇸 English</option>
+                </select>
+              </div>
+            </div>
+            
+            <!-- Playback & PIN Settings (Side by Side) -->
+            <div class="admin-section">
+              <h4 data-i18n="ui.labels.settings">Einstellungen</h4>
+              <div style="display: flex; gap: 20px; align-items: flex-start;">
+                <!-- Track Lock Settings -->
+                <div style="flex: 1;">
+                  <label for="trackLockTime" data-i18n="ui.labels.trackLockMinutes">Track-Sperre (Minuten):</label>
+                  <input type="number" id="trackLockTime" min="0" max="480" value="60" autocomplete="off">
+                  <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.labels.trackLockDescription">
+                    Wie lange nach der Wiedergabe ist ein Track gesperrt (0 = keine Sperre)
+                  </small>
+                  <button id="savePlaybackSettings" style="margin-top: 8px;" data-i18n="ui.buttons.save">Speichern</button>
+                </div>
+                
+                <!-- PIN Settings -->
+                <div style="flex: 1;">
+                  <label for="adminPinSetting" data-i18n="ui.labels.adminPin">Admin-PIN:</label>
+                  <input type="password" id="adminPinSetting" autocomplete="off" placeholder="4-stellige PIN">
+                  <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.labels.adminPinDescription">
+                    4-stellige PIN für Admin-Zugang (Standard: 1234)
+                  </small>
+                  <button id="saveAdminPinSettings" style="margin-top: 8px;" data-i18n="ui.buttons.savePin">PIN speichern</button>
+                </div>
+              </div>
+              
+              <!-- Debugging Settings -->
+              <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #333;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <label for="debugToggle" style="font-weight: bold; color: var(--primary-color);" data-i18n="ui.labels.debuggingMode">🐛 Debugging-Modus:</label>
+                    <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.messages.debugDescription">Aktiviert detaillierte Console-Ausgaben für Fehlersuche</small>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="debugToggle">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Right Column -->
+          <div class="admin-column">
+            <!-- Auto-DJ & Audio Controls Combined -->
+            <div class="admin-section">
+              <h4 data-i18n="ui.labels.autoDjAudio">🤖 Auto-DJ & Audio-Steuerung</h4>
+              
+              <!-- Auto-DJ Settings Section -->
+              <div style="background: #2a2a2a; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <div>
+                    <span style="font-weight: bold; font-size: 0.9em;" data-i18n="ui.labels.enableAutoDj">Auto-DJ aktivieren</span>
+                    <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.messages.autoPlayDescription">
+                      Spielt automatisch Songs wenn die Playlist leer ist
+                    </small>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="autoDjToggle">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Audio Controls Section -->
+              <div style="background: #2a2a2a; padding: 12px; border-radius: 6px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button id="skipButton" class="admin-footer-btn" style="background: var(--button-primary); color: #000; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: normal;" data-i18n="ui.buttons.start">Start</button>
+                  <button id="clearPlaylistButton" class="admin-footer-btn" style="background: #e67e22; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: normal;" data-i18n="ui.buttons.clear">🗑️ Playlist leeren</button>
+                  <button id="quitButton" class="admin-footer-btn" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: normal;" data-i18n="ui.buttons.quit">Quit</button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Directory Settings -->
+            <div class="admin-section">
+              <h4 data-i18n="ui.labels.dataServer">Data Server</h4>
+              <div id="musicServerStatus" style="margin-bottom: 8px; color: #666; font-size: 0.9em;" data-i18n="ui.labels.serverStatus">Status: Checking...</div>
+              <button id="rescanMusicButton" data-i18n="ui.buttons.rescanMusic">Musik neu scannen</button>
+              <button id="refreshLibraryButton" style="margin-left: 8px;" data-i18n="ui.buttons.refreshLibrary">Bibliothek aktualisieren</button>
+              <button id="cleanupDatabaseButton" style="margin-left: 8px; background: #e74c3c; color: white;" data-i18n="ui.buttons.cleanupDatabase">🧹 Datenbank bereinigen</button>
+              <button id="clearDatabaseButton" style="margin-left: 8px; background: #c0392b; color: white;" data-i18n="ui.buttons.clearDatabase">🗑️ Datenbank vollständig leeren</button>
+              <button id="clearCoverCacheButton" style="margin-left: 8px; background: #e67e22; color: white;" data-i18n="ui.buttons.clearCoverCache">🖼️ Cover-Cache leeren</button>
+              <div id="musicServerStats" style="margin-top: 8px; font-size: 0.85em; color: #666;"></div>
+              <div id="coverCacheStats" style="margin-top: 8px; font-size: 0.85em; color: #666;"></div>
+            </div>
+          </div>
+        </div>
+        </div>
+        
+        <!-- Auto-Learning Tab Content -->
+        <div id="autolearn-content" style="display: none;">
+          <div id="spotifyAutoLearnAdminSection" class="admin-section">
+            <h4 data-i18n="ui.labels.playlistAutoLearning">📋 Playlist Auto-Learning</h4>
+              <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.messages.autoPlaylistDescription">Automatisch beliebte Party-Hits zur Bibliothek hinzufügen.</small>
+              
+              <!-- Party Section -->
+              <div style="margin-bottom: 12px;">
+                <h5 style="margin: 0 0 8px 0; color: var(--primary-color); font-size: 0.95em;" data-i18n="ui.labels.partyPlaylists">🎉 Party Playlists</h5>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px;">
+                  <button id="learnPartyHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎵 Party Hits</button>
+                  <button id="learnSchlager" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🍺 Schlager Party</button>
+                  <button id="learnDanceHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🕺 Dance Hits</button>
+                </div>
+                <button id="learnAllParty" class="auto-learn-btn" style="width: 100%; background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease; margin-bottom: 12px;" data-i18n="ui.buttons.loadAllPartyPlaylists">🎉 Alle Party-Playlists laden</button>
+              </div>
+              
+              <!-- Custom Playlists -->
+              <div style="margin-top: 10px;">
+                <h4 data-i18n="ui.labels.customPlaylists">🔗 Custom Playlists</h4>
+                <div style="display: grid; gap: 6px; margin-bottom: 10px;">
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.playlistName">Playlist Name:</label>
+                    <input type="text" id="customPlaylistName" placeholder="z.B. Party Mix 2025" data-i18n-placeholder="ui.labels.playlistNamePlaceholder" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.spotifyUrl">Spotify URL:</label>
+                    <input type="text" id="customPlaylistUrl" placeholder="https://open.spotify.com/playlist/..." data-i18n-placeholder="ui.labels.spotifyUrlPlaceholder" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <button id="addCustomPlaylist" style="padding: 8px 12px; background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); border-radius: 4px; cursor: pointer; font-size: 0.9em; transition: all 0.2s ease;" data-i18n="ui.buttons.addPlaylist">+ Hinzufügen</button>
+                </div>
+                <div id="savedPlaylistsList" class="custom-playlist-list" style="max-height: 120px; margin-bottom: 10px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; background: rgba(0, 0, 0, 0.3);">
+                  <div style="color: #999; text-align: center; padding: 12px; font-size: 0.85em;" data-i18n="ui.messages.noCustomPlaylists">Keine Custom Playlists</div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                  <button id="loadAllCustom" style="padding: 8px 12px; background: rgba(0, 123, 255, 0.1); border: 1px solid #007bff; color: #007bff; border-radius: 4px; cursor: pointer; font-size: 0.85em; transition: all 0.2s ease;" data-i18n="ui.buttons.loadAll">📥 Alle laden</button>
+                  <button id="clearCustom" style="padding: 8px 12px; background: rgba(220, 53, 69, 0.1); border: 1px solid #dc3545; color: #dc3545; border-radius: 4px; cursor: pointer; font-size: 0.85em; transition: all 0.2s ease;" data-i18n="ui.buttons.deletePlaylist">🗑️ Löschen</button>
+                </div>
+              </div>
+          </div>
+        </div>
+        
+        <!-- Reporting Tab Content -->
+        <div id="reporting-content" style="display: none;">
+          <div class="admin-content-grid">
+            <!-- Left Column -->
+            <div class="admin-column">
+              <!-- Event Information Section -->
+              <div class="admin-section">
+                <h4 data-i18n="ui.labels.eventInformation">📋 Veranstaltungsinformationen</h4>
+                <div style="display: grid; gap: 6px;">
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.eventName">Veranstaltungsname:</label>
+                    <input type="text" id="eventName" placeholder="z.B. Sommerfest 2025" data-i18n-placeholder="ui.labels.eventNamePlaceholder" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.eventOrganizer">Verantwortlicher:</label>
+                    <input type="text" id="eventOrganizer" placeholder="Name des Veranstalters" data-i18n-placeholder="ui.labels.eventOrganizerPlaceholder" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.eventLocation">Standort:</label>
+                    <input type="text" id="eventLocation" placeholder="Veranstaltungsort" data-i18n-placeholder="ui.labels.eventLocationPlaceholder" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.eventAttendees">Anzahl Teilnehmer:</label>
+                    <input type="number" id="eventAttendees" placeholder="z.B. 150" data-i18n-placeholder="ui.labels.eventAttendeesPlaceholder" min="1" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Date Range Selection -->
+              <div class="admin-section">
+                <h4 data-i18n="ui.messages.timeSelectionTitle">📅 Zeitraum auswählen</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.startDate">Von Datum:</label>
+                    <input type="date" id="reportStartDate" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                  <div>
+                    <label style="display: block; color: #ccc; margin-bottom: 2px; font-size: 0.9em;" data-i18n="ui.labels.endDate">Bis Datum:</label>
+                    <input type="date" id="reportEndDate" style="width: 100%; padding: 6px 8px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: white; font-size: 13px; font-family: inherit;">
+                  </div>
+                </div>
+                <div style="margin-top: 8px;">
+                  <button id="generateReport" style="width: 100%; background: var(--button-primary); color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 600;" data-i18n="ui.buttons.generateGemaReport">📊 GEMA-Report generieren</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column -->
+            <div class="admin-column">
+              <!-- Event Management -->
+              <div class="admin-section">
+                <h4 data-i18n="ui.labels.eventManagement">🗂️ Veranstaltungen verwalten</h4>
+                <div style="margin-bottom: 15px;">
+                  <button id="saveCurrentEvent" style="width: 100%; background: #3498db; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; margin-bottom: 10px;" data-i18n="ui.buttons.saveCurrentEvent">💾 Aktuelle Veranstaltung speichern</button>
+                  <button id="loadEventList" style="width: 100%; background: #9b59b6; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer;" data-i18n="ui.buttons.loadEventList">📋 Gespeicherte Veranstaltungen</button>
+                </div>
+                <div id="savedEventsList" style="max-height: 200px; overflow-y: auto; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px;">
+                  <div style="color: #666; text-align: center; padding: 20px; font-size: 0.85em;" data-i18n="ui.messages.noSavedEvents">Keine gespeicherten Veranstaltungen</div>
+                </div>
+              </div>
+
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Theming Tab Content -->
+        <div id="theming-content" style="display: none;">
+          <div class="admin-content-wrapper" style="max-height: 500px; overflow-y: auto; padding: 20px; background: rgba(0, 0, 0, 0.1); border-radius: 8px;">
+            
+            <!-- Visualization Settings -->
+            <div class="admin-section" style="margin-top: 20px;">
+              <h4 style="color: var(--primary-color); margin-bottom: 8px;" data-i18n="ui.labels.visualizations">🎬 Visualisierungen</h4>
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 15px;">
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 8px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span style="font-size: 34px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">⭐</span>
+                    <span style="font-weight: 500; font-size: 0.9rem;">Space</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableSpaceViz" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 8px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span style="font-size: 34px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">🔥</span>
+                    <span style="font-weight: 500; font-size: 0.9rem;">Fire</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableFireViz" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 8px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span style="font-size: 34px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">✨</span>
+                    <span style="font-weight: 500; font-size: 0.9rem;">Particles</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableParticlesViz" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 8px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span style="font-size: 34px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">🔵</span>
+                    <span style="font-weight: 500; font-size: 0.9rem;">Circles</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableCirclesViz" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                </label>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <label for="visualizationSwitchInterval" style="color: #ccc;" data-i18n="ui.labels.switchInterval">Wechsel-Intervall:</label>
+                <input type="number" id="visualizationSwitchInterval" min="5" max="300" value="30" style="width: 60px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 4px; padding: 4px;">
+                <span style="color: #666; font-size: 0.9em;" data-i18n="ui.labels.seconds">Sekunden</span>
+              </div>
+              <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.labels.autosaveNote">
+                Automatisches Speichern. Bei allen Modi aus wird ein Cover-Farben-Hintergrund angezeigt.
+              </small>
+            </div>
+            
+            <!-- Advanced Color Controls -->
+            <div id="advancedColorControls" style="margin-top: 20px;">
+              <!-- This will be populated by the advanced theming system -->
+            </div>
+          </div>
+        </div>
+        
+        <!-- Auto Learning Tab Content -->
+        <div id="auto-learning-content" style="display: none;">
+          <div class="admin-content-wrapper" style="max-height: 500px; overflow-y: auto; padding: 20px; background: rgba(0, 0, 0, 0.1); border-radius: 8px;">
+            <h3 style="margin-top: 0; color: var(--primary-color);">🤖 Auto-Learning</h3>
+            <p>Auto-Learning Einstellungen hier...</p>
+          </div>
+        </div>
+        
+        <!-- Reporting Tab Content -->
+        <div id="reporting-content" style="display: none;">
+          <div class="admin-content-wrapper" style="max-height: 500px; overflow-y: auto; padding: 20px; background: rgba(0, 0, 0, 0.1); border-radius: 8px;">
+            <h3 style="margin-top: 0; color: var(--primary-color);">📊 Reporting</h3>
+            <p>Reporting Einstellungen hier...</p>
+          </div>
+        </div>
+        
+        <div class="admin-panel-footer" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 15px; border-top: 1px solid #333;">
+          <button id="lockAdminPanel" class="admin-footer-btn" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: normal;" data-i18n="ui.buttons.lock">🔒 Sperren</button>
+          <button id="closeAdminPanel" class="admin-footer-btn" style="background: #666; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: normal;" data-i18n="ui.buttons.close">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Touch Keyboard -->
+  <div id="touchKeyboard" class="touch-keyboard hidden">
+    <div class="keyboard-header">
+      <button class="keyboard-close" id="closeTouchKeyboard">✕</button>
+    </div>
+    
+    <div class="keyboard-body">
+      <div class="keyboard-layout">
+        <!-- Left side: Letters -->
+        <div class="keyboard-letters">
+          <!-- Letters row 1 -->
+          <div class="keyboard-row letters-row">
+            <button class="touch-key" data-key="q">Q</button>
+            <button class="touch-key" data-key="w">W</button>
+            <button class="touch-key" data-key="e">E</button>
+            <button class="touch-key" data-key="r">R</button>
+            <button class="touch-key" data-key="t">T</button>
+            <button class="touch-key" data-key="z">Z</button>
+            <button class="touch-key" data-key="u">U</button>
+            <button class="touch-key" data-key="i">I</button>
+            <button class="touch-key" data-key="o">O</button>
+            <button class="touch-key" data-key="p">P</button>
+          </div>
+          
+          <!-- Letters row 2 -->
+          <div class="keyboard-row letters-row">
+            <button class="touch-key" data-key="a">A</button>
+            <button class="touch-key" data-key="s">S</button>
+            <button class="touch-key" data-key="d">D</button>
+            <button class="touch-key" data-key="f">F</button>
+            <button class="touch-key" data-key="g">G</button>
+            <button class="touch-key" data-key="h">H</button>
+            <button class="touch-key" data-key="j">J</button>
+            <button class="touch-key" data-key="k">K</button>
+            <button class="touch-key" data-key="l">L</button>
+            <button class="touch-key" data-key="ö">Ö</button>
+          </div>
+          
+          <!-- Letters row 3 -->
+          <div class="keyboard-row letters-row">
+            <button class="touch-key" data-key="y">Y</button>
+            <button class="touch-key" data-key="x">X</button>
+            <button class="touch-key" data-key="c">C</button>
+            <button class="touch-key" data-key="v">V</button>
+            <button class="touch-key" data-key="b">B</button>
+            <button class="touch-key" data-key="n">N</button>
+            <button class="touch-key" data-key="m">M</button>
+            <button class="touch-key" data-key="ä">Ä</button>
+            <button class="touch-key" data-key="ü">Ü</button>
+            <button class="touch-key" data-key="ß">ß</button>
+          </div>
+          
+          <!-- Action row -->
+          <div class="keyboard-row action-row">
+            <button class="touch-key touch-key-wide" data-key=" ">Leertaste</button>
+            <button class="touch-key touch-key-action" data-action="backspace">⌫</button>
+            <button class="touch-key touch-key-action" data-action="clear">⌧</button>
+          </div>
+        </div>
+        
+        <!-- Right side: Numbers -->
+        <div class="keyboard-numbers">
+          <div class="keyboard-row numbers-row">
+            <button class="touch-key" data-key="1">1</button>
+            <button class="touch-key" data-key="2">2</button>
+            <button class="touch-key" data-key="3">3</button>
+          </div>
+          <div class="keyboard-row numbers-row">
+            <button class="touch-key" data-key="4">4</button>
+            <button class="touch-key" data-key="5">5</button>
+            <button class="touch-key" data-key="6">6</button>
+          </div>
+          <div class="keyboard-row numbers-row">
+            <button class="touch-key" data-key="7">7</button>
+            <button class="touch-key" data-key="8">8</button>
+            <button class="touch-key" data-key="9">9</button>
+          </div>
+          <div class="keyboard-row numbers-row">
+            <button class="touch-key touch-key-zero" data-key="0">0</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  
+  <!-- Spotify Configuration Modal -->
+  <div id="spotifyConfigModal" class="overlay hidden">
+    <div class="overlay-content" style="max-width: 600px;">
+      <button class="pin-close-btn" id="closeSpotifyConfigModal" title="Schließen">✕</button>
+      <div style="padding: 20px;">
+        <h3 style="margin: 0 0 20px 0; color: var(--primary-color); display: flex; align-items: center; gap: 10px;">
+          <span>🎵</span>
+          <span data-i18n="ui.labels.spotifyAppConfig">Spotify App Konfiguration</span>
+        </h3>
+        
+        <div style="background: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1DB954;">
+          <h4 style="margin: 0 0 10px 0; color: #1DB954;">📋 Anleitung:</h4>
+          <ol style="margin: 0; padding-left: 20px; color: #ccc; line-height: 1.6;">
+            <li>Gehe zum <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: #1DB954; text-decoration: none;">Spotify Developer Dashboard</a></li>
+            <li>Erstelle eine neue App oder wähle eine bestehende aus</li>
+            <li>Kopiere die <strong>Client ID</strong> und füge sie unten ein</li>
+            <li>Füge diese Redirect-URL in deinen App-Einstellungen hinzu:<br>
+                <code style="background: #1a1a1a; padding: 4px 8px; border-radius: 4px; color: #1DB954; font-family: monospace;">http://127.0.0.1:5500/spotify_login.html</code>
+            </li>
+          </ol>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="spotifyClientId" style="display: block; margin-bottom: 8px; font-weight: bold; color: #ccc;">
+            <span data-i18n="ui.labels.spotifyClientId">Spotify Client ID:</span>
+          </label>
+          <input 
+            type="text" 
+            id="spotifyClientId" 
+            placeholder="Deine Spotify Client ID eingeben..."
+            style="width: 100%; padding: 12px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 6px; font-family: monospace; font-size: 14px;"
+            data-i18n-placeholder="ui.labels.spotifyClientIdPlaceholder"
+          >
+          <small style="display: block; color: #666; margin-top: 6px; font-size: 0.85em;">
+            <span data-i18n="ui.messages.spotifyClientIdInfo">Keine Sorge - die Client ID ist öffentlich und kann sicher geteilt werden.</span>
+          </small>
+        </div>
+        
+        <div style="background: #3a3a3a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0; color: #f39c12;">⚠️ Wichtiger Hinweis:</h4>
+          <p style="margin: 0; color: #ccc; line-height: 1.5;">
+            Nach dem Speichern der neuen Client ID musst du dich erneut bei Spotify anmelden, damit die Änderungen wirksam werden.
+          </p>
+        </div>
+        
+        <div class="admin-section" style="display: flex; gap: 10px; justify-content: flex-end; background: none; border: none; padding: 0;">
+          <button 
+            id="cancelSpotifyConfig" 
+            style="background: #666; color: #e5e5e5;"
+            data-i18n="ui.buttons.cancel"
+          >
+            Abbrechen
+          </button>
+          <button 
+            id="saveSpotifyConfig" 
+            data-i18n="ui.buttons.save"
+          >
+            Speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-Learning Modal -->
+  <audio id="audioPlayer" crossorigin="anonymous"></audio>
+  
+  <!-- Modular JavaScript - Load before Spotify SDK -->
+  <script src="js/debug.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/queue_api.js"></script>
+  <script src="js/settings_api.js"></script>
+  <script src="js/session_api.js"></script>
+  <script src="js/admin_panel.js"></script>
+  <script src="js/theming.js"></script>
+  <script src="js/spotify.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/covers.js"></script>
+  <script src="js/playlists.js"></script>
+  <script src="js/equalizer.js"></script>
+  <script src="js/visualizer.js"></script>
+  <script src="js/search.js"></script>
+  <script src="jukebox.js"></script>
+  <script src="js/library_renderer.js"></script>
+  <script src="js/library_renderer_genres.js"></script>
+  <script src="js/library_renderer_decades.js"></script>
+  
+  <!-- Advanced Theming System Initialization -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      debugLog('theming', '🎨 Initializing Advanced Theming System...');
+      
+      // Check if theming system is available
+      if (!window.advancedTheming) {
+        console.error('❌ Advanced Theming System not found!');
+        return;
+      }
+      
+      // Check if settings API is available
+      if (!window.settingsAPI) {
+        console.error('⚠️ Settings API not found - theme saving may not work');
+      }
+      
+      // Initialize advanced theming system
+      window.advancedTheming.initialize().then(() => {
+        debugLog('theming', '✅ Advanced Theming System initialized');
+        
+        // Populate the admin panel with color controls
+        const controlsContainer = document.getElementById('advancedColorControls');
+        if (controlsContainer) {
+          controlsContainer.innerHTML = window.advancedTheming.generateAdminPanel();
+          window.advancedTheming.setupAdminEventListeners();
+          debugLog('theming', '✅ Advanced theming admin panel populated');
+        } else {
+          console.error('❌ advancedColorControls container not found!');
+        }
+      }).catch(error => {
+        console.error('❌ Error initializing theming system:', error);
+      });
+    });
+  </script>
+  
+  <!-- Spotify SDK loaded after modules -->
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+</body>
+</html>

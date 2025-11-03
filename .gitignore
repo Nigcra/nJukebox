@@ -1,0 +1,38 @@
+# Dependencies
+/node_modules
+
+# Spotify credentials
+spotify_credentials.json
+
+# Cache files
+/cache
+
+# Music files
+/music
+
+# Generated cover images
+/data/covers
+/data/artist-covers
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Generated database
+/data/music.db
+
+# Database files (user data)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# Build/Distribution files
+/.dist/

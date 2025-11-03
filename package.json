@@ -1,0 +1,64 @@
+{
+  "name": "jukebox_data_server",
+  "version": "1.0.0",
+  "description": "Data server for jukebox with automatic music library indexing and API",
+  "main": "data_server.js",
+  "bin": {
+    "jukebox-data": "data_server.js",
+    "jukebox-player": "jukebox_server.js"
+  },
+  "pkg": {
+    "assets": [
+      "config.json",
+      "node_modules/music-metadata/**",
+      "node_modules/strtok3/**",
+      "node_modules/file-type/**",
+      "node_modules/token-types/**",
+      "node_modules/@tokenizer/**",
+      "node_modules/sqlite3/**",
+      "node_modules/sharp/**"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "scripts": [
+      "node_modules/music-metadata/lib/**/*.js",
+      "node_modules/strtok3/lib/**/*.js"
+    ],
+    "patches": {
+      "sqlite3": "copy node_modules/sqlite3/build/Release/node_sqlite3.node node_sqlite3.node"
+    }
+  },
+  "scripts": {
+    "start": "node data_server.js",
+    "dev": "node --watch data_server.js",
+    "scan": "node music_scanner.js",
+    "build-data": "pkg data_server.js --target node18-win-x64 --output jukebox_data_server.exe --no-bytecode --public-packages \"*\" --public",
+    "build-player": "pkg jukebox_server.js --target node18-win-x64 --output jukebox.exe --no-bytecode --public-packages \"*\" --public",
+    "build-all": "npm run build-data && npm run build-player",
+    "build-simple": "build_simple.bat",
+    "dist": "npm run build-simple",
+    "rebuild-sqlite3": "npm install sqlite3 --build-from-source",
+    "postbuild": "echo Build completed. If SQLite3 errors occur, the Node.js fallback will be used."
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.0",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "fs-extra": "^11.1.1",
+    "music-metadata": "^7.14.0",
+    "sharp": "^0.32.6",
+    "sqlite3": "^5.1.7"
+  },
+  "keywords": [
+    "music",
+    "server",
+    "jukebox",
+    "api",
+    "metadata"
+  ],
+  "author": "Jukebox",
+  "license": "MIT"
+}

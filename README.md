@@ -119,7 +119,7 @@ The application includes scripts for kiosk-style deployment, though this was con
 - Chrome kiosk mode support
 - Basic session persistence
 
-## � TODO
+## 📝 TODO
 
 - [ ] Remote control (control by Smartphone / admin mode to skip bad songs etc.)
 - [ ] Caching
@@ -127,7 +127,7 @@ The application includes scripts for kiosk-style deployment, though this was con
 - [ ] Better cover handling
 
 
-## �📄 License
+## 📋 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 

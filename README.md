@@ -39,7 +39,7 @@ A web-based jukebox application with local music library and Spotify integration
 
 ### Installation
 ```bash
-git clone https://github.com/Nigcra/jukebox.git
+git clone https://github.com/Nigcra/nJukebox.git
 cd jukebox
 npm install
 ```

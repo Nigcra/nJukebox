@@ -125,6 +125,7 @@ The application includes scripts for kiosk-style deployment, though this was con
 - [ ] Caching
 - [ ] Bugfixing and code cleanup
 - [ ] Better cover handling
+- [ ] Party games / fun questions and mentions
 
 
 ## 📋 License

@@ -129,7 +129,10 @@ The application includes scripts for kiosk-style deployment, though this was con
 
 ## 📋 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License v3.0 - see [LICENSE](LICENSE) for details.
+
+**Note:** This project uses FFmpeg (via `ffmpeg-static`), which is licensed under GPL. Therefore, this project must also be distributed under a GPL-compatible license.
+
 
 ## 🤝 Contributing
 

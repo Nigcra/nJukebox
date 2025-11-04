@@ -1,6 +1,6 @@
 # 🎵 nJukebox
 
-A web-based jukebox application with local music library and Spotify integration. Built for personal use - may require customization for other scenarios.
+**nJukebox** (Node.js Jukebox) is a web-based jukebox application with local music library and Spotify integration. Built for personal use - may require customization for other scenarios.
 
 ## 📸 Screenshots
 

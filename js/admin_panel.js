@@ -16,107 +16,9 @@ class AdminSettingsManager {
 
   // Load admin settings from Settings API (with localStorage fallback)
   async loadAdminSettings() {
-    try {
-      // Wait for Settings API to be available
-      const waitForSettingsAPI = () => {
-        return new Promise((resolve) => {
-          const checkAPI = () => {
-            if (window.settingsAPI) {
-              resolve();
-            } else {
-              setTimeout(checkAPI, 50);
-            }
-          };
-          checkAPI();
-        });
-      };
-
-      await waitForSettingsAPI();
-      
-      // Load from Settings API
-      const trackLockTime = await window.settingsAPI.getSetting('admin', 'trackLockTimeMinutes', 60);
-      const debuggingEnabled = await window.settingsAPI.getSetting('admin', 'debuggingEnabled', false);
-      
-      // Load Spotify Client ID
-      if (typeof window.loadSpotifyClientId === 'function') {
-        await window.loadSpotifyClientId();
-      }
-      
-      // Update global variables
-      if (typeof window.trackLockTimeMinutes !== 'undefined') {
-        window.trackLockTimeMinutes = trackLockTime;
-      }
-      
-      // Set debug state via debug.js module (not just UI)
-      if (typeof window.setDebuggingState === 'function') {
-        window.setDebuggingState(debuggingEnabled, 'settings-api');
-      }
-      
-      // Update UI if elements exist
-      const trackLockTimeInput = document.getElementById('trackLockTime');
-      if (trackLockTimeInput) {
-        trackLockTimeInput.value = trackLockTime;
-      }
-      
-      const debugToggle = document.getElementById('debugToggle');
-      if (debugToggle) {
-        debugToggle.checked = debuggingEnabled;
-      }
-      
-      debugLog('admin', '⚙️  Admin settings loaded from Settings API:', {
-        trackLockTimeMinutes: trackLockTime,
-        debuggingEnabled
-      });
-      
-    } catch (error) {
-      debugLog('ADMIN', '⚠️  Failed to load from Settings API:', error);
-      
-      // No localStorage fallback - Settings API should be available
-      // Keep default values set by Settings API
-      
-      // Update UI if elements exist
-      const trackLockTimeInput = document.getElementById('trackLockTime');
-      if (trackLockTimeInput && typeof window.trackLockTimeMinutes !== 'undefined') {
-        trackLockTimeInput.value = window.trackLockTimeMinutes;
-      }
-      
-      // Load debugging status from localStorage
-      const settings = this.getAdminSettingsFromStorage();
-      const debugEnabled = settings.debuggingEnabled || false;
-      
-      // Set debug state via debug.js module (not just UI)
-      if (typeof window.setDebuggingState === 'function') {
-        window.setDebuggingState(debugEnabled, 'localStorage-fallback');
-      }
-      
-      // Update UI toggle to match stored value
-      const debugToggle = document.getElementById('debugToggle');
-      if (debugToggle) {
-        debugToggle.checked = debugEnabled;
-      }
-    }
-    
-    // Load visualization settings
-    if (typeof window.loadVisualizationSettings === 'function') {
-      window.loadVisualizationSettings();
-    }
-    if (typeof window.updateVisualizationSettingsUI === 'function') {
-      window.updateVisualizationSettingsUI();
-    }
-    
-    // Load language settings
-    const languageSelect = document.getElementById('languageSelect');
-    if (languageSelect && window.i18nSystem) {
-      const currentLanguage = window.i18nSystem.currentLanguage;
-      if (currentLanguage) {
-        languageSelect.value = currentLanguage;
-      }
-      debugLog('admin', 'Language settings loaded:', currentLanguage);
-    }
-    
-    this.updateMusicServerStatus();
-    
-    debugLog('admin', 'Admin settings loaded');
+    console.log('[ADMIN] loadAdminSettings() started - redirecting to loadSettingsFromAPI()');
+    // Redirect to the proper function that has all the functionality
+    return this.loadSettingsFromAPI();
   }
 
   // Update Data Server Status in Admin Panel
@@ -861,7 +763,16 @@ class AdminSettingsManager {
 
   // Load settings from API and update UI
   async loadSettingsFromAPI() {
+    console.log('[ADMIN] loadSettingsFromAPI() started');
     try {
+      // Check if Settings API is available first
+      console.log('[ADMIN] Checking Settings API availability:', !!window.settingsAPI);
+      if (!window.settingsAPI) {
+        console.error('[ADMIN] ERROR: Settings API not available!');
+        return;
+      }
+      
+      console.log('[ADMIN] About to load settings from Settings API...');
       debugLog('admin', '⚙️  Loading settings from Settings API...');
 
       // Clear cache to force fresh load
@@ -871,8 +782,15 @@ class AdminSettingsManager {
       }
 
       // Load all admin settings
+      console.log('[ADMIN] Loading admin settings...');
       const adminSettings = await window.settingsAPI.getAdminSettings();
+      console.log('[ADMIN] Admin settings loaded:', adminSettings);
+      
+      console.log('[ADMIN] Loading visualization settings...');
       const visualizationSettings = await window.settingsAPI.getVisualizationSettings();
+      console.log('[ADMIN] Visualization settings loaded:', visualizationSettings);
+      
+      console.log('[ADMIN] Loading audio settings...');
       const audioSettings = await window.settingsAPI.getAudioSettings();
       const uiSettings = await window.settingsAPI.getUISettings();
 
@@ -914,18 +832,22 @@ class AdminSettingsManager {
       }
 
       // Ensure Lightning setting exists with default value
-      if (visualizationSettings.enableLightning === undefined || visualizationSettings.enableLightning === null) {
+      if (updatedVisualizationSettings.enableLightning === undefined || updatedVisualizationSettings.enableLightning === null) {
         debugLog('admin', '🔍 Lightning setting not found, creating with default value');
         await window.settingsAPI.setSetting('visualization', 'enableLightning', true, 'boolean');
         // Reload visualization settings to get the newly created setting
-        const updatedVisualizationSettings = await window.settingsAPI.getVisualizationSettings();
-        Object.assign(visualizationSettings, updatedVisualizationSettings);
+        const reloadedSettings = await window.settingsAPI.getVisualizationSettings();
+        Object.assign(updatedVisualizationSettings, reloadedSettings);
       }
 
       // Update debug system FIRST to set the correct state
-      this.updateDebugSystem(adminSettings.debuggingEnabled?.value ?? false);
+      const debugEnabled = adminSettings.debuggingEnabled?.value ?? adminSettings.debuggingEnabled ?? false;
+      console.log('[ADMIN] About to call updateDebugSystem with debugEnabled:', debugEnabled);
+      this.updateDebugSystem(debugEnabled);
+      console.log('[ADMIN] updateDebugSystem completed');
 
       // Update UI elements - now with correct debug state
+      console.log('[ADMIN] About to call updateAdminUI with adminSettings:', adminSettings);
       this.updateAdminUI(adminSettings);
       this.updateVisualizationUI(updatedVisualizationSettings);
       this.updateGlobalVariables(adminSettings, updatedVisualizationSettings, audioSettings, uiSettings);
@@ -939,7 +861,10 @@ class AdminSettingsManager {
       this.settingsLoaded = true;
 
       debugLog('admin', '⚙️  Settings loaded from API');
+      console.log('[ADMIN] loadSettingsFromAPI() completed successfully');
     } catch (error) {
+      console.error('[ADMIN] ERROR in loadSettingsFromAPI():', error);
+      console.error('[ADMIN] Error stack:', error.stack);
       debugLog('ADMIN', '❌ Error loading settings from API:', error);
     }
   }
@@ -963,6 +888,8 @@ class AdminSettingsManager {
   }
 
   updateAdminUI(adminSettings) {
+    console.log('[ADMIN] updateAdminUI called with settings:', adminSettings);
+    
     // Track Lock Time
     const trackLockTimeInput = document.getElementById('trackLockTime');
     if (trackLockTimeInput && adminSettings.trackLockTimeMinutes) {
@@ -971,24 +898,25 @@ class AdminSettingsManager {
 
     // Debugging Toggle - show actual current debug state, not just database value
     const debugToggle = document.getElementById('debugToggle');
+    console.log('[ADMIN] updateAdminUI - debugToggle element found:', !!debugToggle);
     if (debugToggle) {
       // Get current actual debug state from debug system
       let currentDebugState = false;
       if (typeof window.isDebuggingEnabled === 'function') {
         currentDebugState = window.isDebuggingEnabled();
         console.log('[ADMIN] updateAdminUI - Debug state from function:', currentDebugState);
-      } else if (adminSettings.debuggingEnabled) {
+      } else if (adminSettings.debuggingEnabled !== undefined && adminSettings.debuggingEnabled !== null) {
         // Fallback to database value if debug system not available
         currentDebugState = adminSettings.debuggingEnabled.value;
         console.log('[ADMIN] updateAdminUI - Debug state from DB fallback:', currentDebugState);
       }
       
-      console.log('[ADMIN] updateAdminUI - Setting debug toggle to:', currentDebugState);
-      debugToggle.checked = currentDebugState;
-      debugLog('admin', '🔧 Debug toggle set to current state:', currentDebugState);
-      
-      // After setting the toggle, sync it with the actual debug system state
+      // Sync debug toggle with the actual debug system state first
       this.syncDebugToggle();
+      
+      // Then ensure UI reflects the correct state
+      console.log('[ADMIN] updateAdminUI - Final debug toggle check:', debugToggle.checked);
+      debugLog('admin', '🔧 Debug toggle finalized at state:', debugToggle.checked);
     }
 
     // Admin PIN (don't pre-fill for security)
@@ -1330,6 +1258,17 @@ class AdminSettingsManager {
         console.log('[ADMIN] Syncing debug toggle from', debugToggle.checked, 'to', currentDebugState);
         debugToggle.checked = currentDebugState;
         debugLog('admin', '🔧 Debug toggle synced to current state:', currentDebugState);
+        
+        // Verify the toggle was actually set
+        setTimeout(() => {
+          const verifyToggle = document.getElementById('debugToggle');
+          if (verifyToggle) {
+            debugLog('admin', '🔍 Debug toggle verification - Expected:', currentDebugState, 'Actual:', verifyToggle.checked);
+            if (verifyToggle.checked !== currentDebugState) {
+              debugLog('admin', '❌ Debug toggle was overridden after sync!');
+            }
+          }
+        }, 100);
       } else {
         debugLog('admin', '✅ Debug toggle already in sync');
       }
@@ -1508,13 +1447,13 @@ document.addEventListener('DOMContentLoaded', () => {
       window.adminSettingsManager = new AdminSettingsManager();
       debugLog('admin', '⚙️  Admin Settings Manager initialized');
       
-      // Set up debug toggle sync when admin panel is opened
+      // Set up visualization toggle sync when admin panel is opened
       document.addEventListener('click', (event) => {
         if (event.target && event.target.id === 'adminBtn') {
-          // Admin panel opened - sync toggles after a short delay
+          // Admin panel opened - sync visualization toggles only
           setTimeout(() => {
             if (window.adminSettingsManager) {
-              window.adminSettingsManager.syncDebugToggle();
+              // Debug toggle is synced by loadAdminSettings, no need to sync twice
               window.adminSettingsManager.syncVisualizationToggles();
             }
           }, 100);
@@ -1635,10 +1574,7 @@ async function handlePinSubmit() {
     }
     updateControlsState();
     
-    // Sync debug toggle with current debug state
-    if (window.adminPanel && window.adminPanel.syncDebugToggle) {
-      window.adminPanel.syncDebugToggle();
-    }
+    // Debug toggle sync is handled by loadAdminSettings - no need for duplicate sync here
     
     // Update queue display to show/hide remove buttons
     if (typeof debouncedUpdateQueueDisplay !== 'undefined') {

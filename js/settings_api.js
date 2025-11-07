@@ -305,24 +305,70 @@ class SettingsAPI {
   }
 
   // Convenience methods for common settings
+  // Helper method to extract values from settings objects
+  extractValues(settingsData) {
+    const values = {};
+    debugLog('settings', '🔍 Extracting values from settings data:', settingsData);
+    
+    for (const [key, settingData] of Object.entries(settingsData)) {
+      if (settingData && typeof settingData === 'object') {
+        // Check if this is a nested settings object with .value properties
+        if (settingData.value !== undefined) {
+          values[key] = settingData.value;
+          debugLog('settings', `🔍 Extracted ${key}: ${settingData.value} (from object.value)`);
+        }
+        // Check if this is a category object containing more settings
+        else if (typeof settingData === 'object' && !Array.isArray(settingData)) {
+          // This might be a nested category - extract its contents
+          for (const [nestedKey, nestedData] of Object.entries(settingData)) {
+            if (nestedData && typeof nestedData === 'object' && nestedData.value !== undefined) {
+              values[nestedKey] = nestedData.value;
+              debugLog('settings', `🔍 Extracted nested ${nestedKey}: ${nestedData.value} (from nested object.value)`);
+            } else {
+              values[nestedKey] = nestedData;
+              debugLog('settings', `🔍 Extracted nested ${nestedKey}: ${nestedData} (direct nested value)`);
+            }
+          }
+        } else {
+          values[key] = settingData;
+          debugLog('settings', `🔍 Extracted ${key}: ${settingData} (direct object)`);
+        }
+      } else {
+        values[key] = settingData;
+        debugLog('settings', `🔍 Extracted ${key}: ${settingData} (direct value)`);
+      }
+    }
+    
+    debugLog('settings', '🔍 Final extracted values:', values);
+    return values;
+  }
+
   async getVisualizationSettings() {
-    return await this.getCategory('visualization');
+    const settingsData = await this.getCategory('visualization');
+    debugLog('settings', '🔍 Raw category data for visualization:', settingsData);
+    const extracted = this.extractValues(settingsData);
+    debugLog('settings', '🔍 Extracted visualization settings:', extracted);
+    return extracted;
   }
 
   async getAdminSettings() {
-    return await this.getCategory('admin');
+    const settingsData = await this.getCategory('admin');
+    return this.extractValues(settingsData);
   }
 
   async getLanguageSettings() {
-    return await this.getCategory('language');
+    const settingsData = await this.getCategory('language');
+    return this.extractValues(settingsData);
   }
 
   async getAudioSettings() {
-    return await this.getCategory('audio');
+    const settingsData = await this.getCategory('audio');
+    return this.extractValues(settingsData);
   }
 
   async getUISettings() {
-    return await this.getCategory('ui');
+    const settingsData = await this.getCategory('ui');
+    return this.extractValues(settingsData);
   }
 
   // Auto-save functionality for form inputs

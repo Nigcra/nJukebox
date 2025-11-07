@@ -69,13 +69,10 @@ class AdminSettingsManager {
       });
       
     } catch (error) {
-      debugLog('ADMIN', '⚠️  Failed to load from Settings API, using localStorage fallback:', error);
+      debugLog('ADMIN', '⚠️  Failed to load from Settings API:', error);
       
-      // Fallback to localStorage
-      const savedTrackLockTime = localStorage.getItem('trackLockTimeMinutes');
-      if (savedTrackLockTime !== null && typeof window.trackLockTimeMinutes !== 'undefined') {
-        window.trackLockTimeMinutes = parseInt(savedTrackLockTime, 10);
-      }
+      // No localStorage fallback - Settings API should be available
+      // Keep default values set by Settings API
       
       // Update UI if elements exist
       const trackLockTimeInput = document.getElementById('trackLockTime');
@@ -197,43 +194,33 @@ class AdminSettingsManager {
     `;
   }
 
-  // Load saved events list for GEMA reporting
-  loadSavedEventsList() {
-    const savedEvents = JSON.parse(localStorage.getItem('savedEvents') || '[]');
-    const listContainer = document.getElementById('savedEventsList');
-    
-    if (!listContainer) return;
-    
-    if (savedEvents.length === 0) {
-      const noEventsText = (typeof window.i18nSystem !== 'undefined' && window.i18nSystem) ? 
-        window.i18nSystem.t('ui.messages.noSavedEvents') : 
-        'Keine gespeicherten Veranstaltungen';
-      listContainer.innerHTML = `<div style="color: #999; text-align: center; padding: 20px;">${noEventsText}</div>`;
-      return;
+  // Event Management via Settings API
+  async getSavedEvents() {
+    try {
+      if (window.settingsAPI) {
+        return await window.settingsAPI.getSetting('events', 'savedEvents', []);
+      }
+      return [];
+    } catch (error) {
+      debugLog('admin', '[EVENTS] Error loading events from Settings API:', error);
+      return [];
     }
-    
-    let listHTML = '';
-    savedEvents.reverse().forEach(event => { // Show newest first
-      listHTML += `
-        <div style="background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 12px; margin-bottom: 10px; cursor: pointer;" 
-             onclick="loadEventData('${event.id}')">
-          <div style="font-weight: 600; color: #1DB954; margin-bottom: 5px;">${this.escapeHtml(event.name)}</div>
-          <div style="font-size: 0.8em; color: #999;">
-            📍 ${this.escapeHtml(event.location || 'Kein Ort')} • 
-            👥 ${event.attendees} Teilnehmer • 
-            📅 ${new Date(event.created).toLocaleDateString('de-DE')}
-          </div>
-          <div style="margin-top: 8px;">
-            <button onclick="event.stopPropagation(); loadEventData('${event.id}')" 
-                    style="background: #1DB954; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 0.8em;">📋 Laden</button>
-            <button onclick="event.stopPropagation(); deleteEvent('${event.id}')" 
-                    style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">🗑️ Löschen</button>
-          </div>
-        </div>
-      `;
-    });
-    
-    listContainer.innerHTML = listHTML;
+  }
+
+  async saveEventsToAPI(events) {
+    try {
+      if (window.settingsAPI) {
+        const success = await window.settingsAPI.setSetting('events', 'savedEvents', events, 'json');
+        if (success) {
+          debugLog('admin', '[EVENTS] Events saved to Settings API');
+        }
+        return success;
+      }
+      return false;
+    } catch (error) {
+      debugLog('admin', '[EVENTS] Error saving events to Settings API:', error);
+      return false;
+    }
   }
 
   // HTML escape utility
@@ -251,17 +238,9 @@ class AdminSettingsManager {
     settings.debuggingEnabled = (typeof window.isDebuggingEnabled === 'function') 
       ? window.isDebuggingEnabled() 
       : false;
-    settings.visualizations = window.visualizationSettings || {
-      enableSpace: true,
-      enableFire: true,
-      enableParticles: true,
-      enableCircles: true,
-      switchInterval: 30
-    };
-    localStorage.setItem('adminSettings', JSON.stringify(settings));
-    localStorage.setItem('trackLockTimeMinutes', (window.trackLockTimeMinutes || 60).toString());
-    debugLog('admin', 'Admin-Einstellungen gespeichert:', settings);
-    return settings;
+    // Settings removed - managed by Settings API instead of localStorage
+    debugLog('admin', 'Settings managed by Settings API - no localStorage needed');
+    return {};
   }
 
   // Initialize admin main tabs
@@ -481,52 +460,6 @@ class AdminSettingsManager {
   initializeAdditionalAdminHandlers() {
     // Debug toggle handler is now in setupDebuggingHandler() - don't duplicate it here
     
-    // Visualization settings handlers - automatic saving
-    const visualizationCheckboxes = [
-      'enableSpaceViz', 'enableFireViz', 'enableParticlesViz', 'enableCirclesViz'
-    ];
-    
-    visualizationCheckboxes.forEach(checkboxId => {
-      const checkbox = document.getElementById(checkboxId);
-      if (checkbox) {
-        checkbox.addEventListener('change', () => {
-          // Auto-save when any checkbox changes
-          if (window.visualizationSettings) {
-            window.visualizationSettings.enableSpace = document.getElementById('enableSpaceViz')?.checked || false;
-            window.visualizationSettings.enableFire = document.getElementById('enableFireViz')?.checked || false;
-            window.visualizationSettings.enableParticles = document.getElementById('enableParticlesViz')?.checked || false;
-            window.visualizationSettings.enableCircles = document.getElementById('enableCirclesViz')?.checked || false;
-            
-            // Reset current mode if it becomes unavailable
-            if (window.getAvailableVisualizationModes) {
-              const availableModes = window.getAvailableVisualizationModes();
-              if (availableModes.length > 0 && window.getCurrentVisualizationModeName && !availableModes.includes(window.getCurrentVisualizationModeName())) {
-                window.currentVisualizationMode = 0; // Reset to first available mode
-              }
-            }
-            
-            // Restart visualization rotation if needed
-            if (window.nowPlayingAnimationFrame && window.stopVisualizationModeRotation && window.startVisualizationModeRotation) {
-              window.stopVisualizationModeRotation();
-              window.startVisualizationModeRotation();
-            }
-            
-            if (window.saveVisualizationSettings) {
-              window.saveVisualizationSettings(); // Now uses the wrapper function that calls saveAdminSettings
-            }
-            debugLog('admin', 'Visualisierungs-Einstellungen automatisch gespeichert:', window.visualizationSettings);
-            
-            // Dispatch event for UI updates
-            if (typeof document !== 'undefined') {
-              document.dispatchEvent(new CustomEvent('visualizationSettingsChanged', {
-                detail: { settings: window.visualizationSettings, source: 'checkbox-change' }
-              }));
-            }
-          }
-        });
-      }
-    });
-
     // Interval input auto-save
     const intervalInput = document.getElementById('visualizationSwitchInterval');
     if (intervalInput) {
@@ -551,9 +484,6 @@ class AdminSettingsManager {
             window.startVisualizationModeRotation();
           }
           
-          if (window.saveVisualizationSettings) {
-            window.saveVisualizationSettings(); // Now uses the wrapper function that calls saveAdminSettings
-          }
           debugLog('admin', 'Visualisierungs-Intervall automatisch gespeichert:', newInterval);
           
           // Dispatch event for UI updates
@@ -569,7 +499,7 @@ class AdminSettingsManager {
     // Admin PIN settings save handler
     const saveAdminPinButton = document.getElementById('saveAdminPinSettings');
     if (saveAdminPinButton) {
-      saveAdminPinButton.addEventListener('click', () => {
+      saveAdminPinButton.addEventListener('click', async () => {
         const adminPinInput = document.getElementById('adminPinSetting');
         const newPin = adminPinInput?.value?.trim();
         
@@ -582,8 +512,10 @@ class AdminSettingsManager {
         
         // Update admin settings
         const settings = this.getAdminSettings();
-        settings.adminPin = newPin;
-        localStorage.setItem('adminSettings', JSON.stringify(settings));
+        // Save to Settings API instead of localStorage
+        if (window.settingsAPI) {
+          await window.settingsAPI.setSetting('admin', 'adminPin', newPin, 'string');
+        }
         
         // Clear the input for security
         if (adminPinInput) {
@@ -805,22 +737,11 @@ class AdminSettingsManager {
     debugLog('admin', 'Data server button handlers initialized');
   }
 
-  // Get admin settings from localStorage
+  // Admin settings managed by Settings API only
   getAdminSettingsFromStorage() {
-    const settings = localStorage.getItem('adminSettings');
-    if (settings) {
-      try {
-        return JSON.parse(settings);
-      } catch (e) {
-        debugLog('admin', 'Error loading admin settings from storage:', e);
-      }
-    }
-    
-    // Default settings
-    return {
-      trackLockTimeMinutes: 60,
-      debuggingEnabled: false
-    };
+    // No localStorage access - Settings API handles persistence
+    debugLog('admin', 'Admin settings managed by Settings API');
+    return {};
   }
 
   // Load language settings
@@ -837,12 +758,15 @@ class AdminSettingsManager {
 
   // Update admin panel specific content after language change
   updateAdminPanelContent() {
-    // Update event list if it exists
+    // Update event list if it exists - delegate to GEMA reporting manager
     const savedEventsList = document.getElementById('savedEventsList');
     if (savedEventsList && savedEventsList.children.length === 1) {
       const firstChild = savedEventsList.children[0];
       if (firstChild.textContent.includes('Keine gespeicherten') || firstChild.textContent.includes('No saved events')) {
-        this.loadSavedEventsList(); // This will use the correct translation
+        // Call the delegated method
+        if (window.adminPanel && window.adminPanel.loadSavedEventsList) {
+          window.adminPanel.loadSavedEventsList();
+        }
       }
     }
   }
@@ -940,29 +864,79 @@ class AdminSettingsManager {
     try {
       debugLog('admin', '⚙️  Loading settings from Settings API...');
 
+      // Clear cache to force fresh load
+      if (window.settingsAPI && window.settingsAPI.clearCache) {
+        window.settingsAPI.clearCache();
+        debugLog('admin', '🧹 Settings cache cleared for fresh load');
+      }
+
       // Load all admin settings
       const adminSettings = await window.settingsAPI.getAdminSettings();
       const visualizationSettings = await window.settingsAPI.getVisualizationSettings();
       const audioSettings = await window.settingsAPI.getAudioSettings();
       const uiSettings = await window.settingsAPI.getUISettings();
 
-      // Update UI elements
+      debugLog('admin', '🔍 Raw visualization settings from API:', visualizationSettings);
+
+      // Ensure all visualization settings exist with default values
+      const requiredVizSettings = {
+        enableSpace: true,
+        enableFire: true,
+        enableParticles: false,
+        enableCircles: true,
+        enableLightning: true,
+        switchInterval: 30
+      };
+
+      for (const [key, defaultValue] of Object.entries(requiredVizSettings)) {
+        if (visualizationSettings[key] === undefined || visualizationSettings[key] === null) {
+          debugLog('admin', `🔍 ${key} setting not found, creating with default value:`, defaultValue);
+          const type = typeof defaultValue === 'boolean' ? 'boolean' : 'number';
+          const success = await window.settingsAPI.setSetting('visualization', key, defaultValue, type);
+          debugLog('admin', `🔍 Created ${key} setting, success:`, success);
+        } else {
+          debugLog('admin', `✅ ${key} setting already exists:`, visualizationSettings[key]);
+        }
+      }
+
+      // Reload visualization settings to get any newly created settings
+      const updatedVisualizationSettings = await window.settingsAPI.getVisualizationSettings();
+      debugLog('admin', '🔍 Final visualization settings:', updatedVisualizationSettings);
+      
+      // Verify Lightning setting specifically
+      if (updatedVisualizationSettings.enableLightning) {
+        debugLog('admin', '✅ Lightning setting loaded successfully:', updatedVisualizationSettings.enableLightning);
+      } else {
+        debugLog('admin', '❌ Lightning setting still missing after creation attempt');
+        // Try to create it again with more debugging
+        const lightningSuccess = await window.settingsAPI.setSetting('visualization', 'enableLightning', true, 'boolean');
+        debugLog('admin', '🔄 Retry Lightning creation result:', lightningSuccess);
+      }
+
+      // Ensure Lightning setting exists with default value
+      if (visualizationSettings.enableLightning === undefined || visualizationSettings.enableLightning === null) {
+        debugLog('admin', '🔍 Lightning setting not found, creating with default value');
+        await window.settingsAPI.setSetting('visualization', 'enableLightning', true, 'boolean');
+        // Reload visualization settings to get the newly created setting
+        const updatedVisualizationSettings = await window.settingsAPI.getVisualizationSettings();
+        Object.assign(visualizationSettings, updatedVisualizationSettings);
+      }
+
+      // Update debug system FIRST to set the correct state
+      this.updateDebugSystem(adminSettings.debuggingEnabled?.value ?? false);
+
+      // Update UI elements - now with correct debug state
       this.updateAdminUI(adminSettings);
-      this.updateVisualizationUI(visualizationSettings);
-      this.updateGlobalVariables(adminSettings, visualizationSettings, audioSettings, uiSettings);
+      this.updateVisualizationUI(updatedVisualizationSettings);
+      this.updateGlobalVariables(adminSettings, updatedVisualizationSettings, audioSettings, uiSettings);
 
       // Emit settings loaded event
       document.dispatchEvent(new CustomEvent('settingsLoaded', {
-        detail: { adminSettings, visualizationSettings, audioSettings, uiSettings }
+        detail: { adminSettings, visualizationSettings: updatedVisualizationSettings, audioSettings, uiSettings }
       }));
 
-      // Update debug system directly (but only on initial load, respect current state)
-      if (!this.settingsLoaded) {
-        this.updateDebugSystem(adminSettings.debuggingEnabled?.value ?? false);
-        this.settingsLoaded = true;
-      } else {
-        debugLog('admin', '⚙️  Settings reloaded - preserving current debug state');
-      }
+      // Mark settings as loaded
+      this.settingsLoaded = true;
 
       debugLog('admin', '⚙️  Settings loaded from API');
     } catch (error) {
@@ -982,9 +956,6 @@ class AdminSettingsManager {
         } else {
           debugLog('admin', '⚙️  Debug system deactivated via Settings API');
         }
-        
-        // Synchronize the debug toggle button with the new state
-        this.syncDebugToggle();
       }
     } catch (error) {
       debugLog('ADMIN', 'Could not sync debug system:', error);
@@ -1015,6 +986,9 @@ class AdminSettingsManager {
       console.log('[ADMIN] updateAdminUI - Setting debug toggle to:', currentDebugState);
       debugToggle.checked = currentDebugState;
       debugLog('admin', '🔧 Debug toggle set to current state:', currentDebugState);
+      
+      // After setting the toggle, sync it with the actual debug system state
+      this.syncDebugToggle();
     }
 
     // Admin PIN (don't pre-fill for security)
@@ -1030,30 +1004,53 @@ class AdminSettingsManager {
     const enableFireViz = document.getElementById('enableFireViz');
     const enableParticlesViz = document.getElementById('enableParticlesViz');
     const enableCirclesViz = document.getElementById('enableCirclesViz');
+    const enableLightningViz = document.getElementById('enableLightningViz');
     const switchIntervalInput = document.getElementById('visualizationSwitchInterval');
 
-    // Get current live values from global visualizationSettings
+    // Get current live values from global visualizationSettings with robust fallback
     const currentSettings = window.visualizationSettings || {};
+    
+    // Helper function to extract value from settings API response
+    const getValue = (setting, defaultVal) => {
+      if (setting === undefined || setting === null) return defaultVal;
+      if (typeof setting === 'object' && setting.value !== undefined) return setting.value;
+      return setting;
+    };
     
     if (enableSpaceViz) {
       const currentValue = currentSettings.enableSpace !== undefined ? 
-        currentSettings.enableSpace : visualizationSettings.enableSpace?.value ?? true;
+        currentSettings.enableSpace : 
+        getValue(visualizationSettings.enableSpace, true);
       enableSpaceViz.checked = currentValue;
+      debugLog('admin', '🔍 Space checkbox set to:', currentValue);
     }
     if (enableFireViz) {
       const currentValue = currentSettings.enableFire !== undefined ? 
-        currentSettings.enableFire : visualizationSettings.enableFire?.value ?? true;
+        currentSettings.enableFire : 
+        getValue(visualizationSettings.enableFire, true);
       enableFireViz.checked = currentValue;
+      debugLog('admin', '🔍 Fire checkbox set to:', currentValue);
     }
     if (enableParticlesViz) {
       const currentValue = currentSettings.enableParticles !== undefined ? 
-        currentSettings.enableParticles : visualizationSettings.enableParticles?.value ?? false;
+        currentSettings.enableParticles : 
+        getValue(visualizationSettings.enableParticles, false);
       enableParticlesViz.checked = currentValue;
+      debugLog('admin', '🔍 Particles checkbox set to:', currentValue);
     }
     if (enableCirclesViz) {
       const currentValue = currentSettings.enableCircles !== undefined ? 
-        currentSettings.enableCircles : visualizationSettings.enableCircles?.value ?? true;
+        currentSettings.enableCircles : 
+        getValue(visualizationSettings.enableCircles, true);
       enableCirclesViz.checked = currentValue;
+      debugLog('admin', '🔍 Circles checkbox set to:', currentValue);
+    }
+    if (enableLightningViz) {
+      const currentValue = currentSettings.enableLightning !== undefined ? 
+        currentSettings.enableLightning : 
+        getValue(visualizationSettings.enableLightning, true);
+      enableLightningViz.checked = currentValue;
+      debugLog('admin', '🔍 Lightning checkbox set to:', currentValue, 'from settings:', visualizationSettings.enableLightning, 'extracted value:', getValue(visualizationSettings.enableLightning, true));
     }
     if (switchIntervalInput) {
       const currentValue = currentSettings.switchInterval !== undefined ? 
@@ -1066,6 +1063,7 @@ class AdminSettingsManager {
       fire: enableFireViz?.checked,
       particles: enableParticlesViz?.checked,
       circles: enableCirclesViz?.checked,
+      lightning: enableLightningViz?.checked,
       interval: switchIntervalInput?.value
     });
   }
@@ -1078,28 +1076,25 @@ class AdminSettingsManager {
     
     // Debug state is managed by debug.js via setDebuggingState() - don't set it directly here
 
-    if (typeof window.visualizationSettings !== 'undefined' && visualizationSettings) {
-      const oldSettings = { ...window.visualizationSettings };
-      window.visualizationSettings = {
-        enableSpace: visualizationSettings.enableSpace?.value ?? true,
-        enableFire: visualizationSettings.enableFire?.value ?? true,
-        enableParticles: visualizationSettings.enableParticles?.value ?? false,
-        enableCircles: visualizationSettings.enableCircles?.value ?? true,
-        switchInterval: visualizationSettings.switchInterval?.value ?? 30
+    // SET the global visualization settings (from Settings API, not defaults!)
+    if (visualizationSettings) {
+      // Extract values properly from Settings API format
+      const getValue = (setting, defaultVal) => {
+        if (setting === undefined || setting === null) return defaultVal;
+        if (typeof setting === 'object' && setting.value !== undefined) return setting.value;
+        return setting;
       };
       
-      // Check if settings changed
-      const settingsChanged = JSON.stringify(oldSettings) !== JSON.stringify(window.visualizationSettings);
-      if (settingsChanged) {
-        debugLog('admin', '🎨 Global visualization settings updated:', window.visualizationSettings);
-        
-        // Dispatch event for UI updates
-        if (typeof document !== 'undefined') {
-          document.dispatchEvent(new CustomEvent('visualizationSettingsChanged', {
-            detail: { settings: window.visualizationSettings, source: 'settings-api' }
-          }));
-        }
-      }
+      window.visualizationSettings = {
+        enableSpace: getValue(visualizationSettings.enableSpace, true),
+        enableFire: getValue(visualizationSettings.enableFire, true),
+        enableParticles: getValue(visualizationSettings.enableParticles, false),
+        enableCircles: getValue(visualizationSettings.enableCircles, true),
+        enableLightning: getValue(visualizationSettings.enableLightning, true),
+        switchInterval: getValue(visualizationSettings.switchInterval, 30)
+      };
+      
+      debugLog('admin', '🎨 Global visualization settings SET from Settings API:', window.visualizationSettings);
     }
   }
 
@@ -1226,19 +1221,19 @@ class AdminSettingsManager {
   setupVisualizationHandlers() {
     const visualizationInputs = [
       'enableSpaceViz',
-      'enableFireViz', 
+      'enableFireViz',
       'enableParticlesViz',
-      'enableCirclesViz'
+      'enableCirclesViz',
+      'enableLightningViz'
     ];
 
     const settingKeys = {
       'enableSpaceViz': 'enableSpace',
       'enableFireViz': 'enableFire',
       'enableParticlesViz': 'enableParticles',
-      'enableCirclesViz': 'enableCircles'
-    };
-
-    // Handle checkboxes with auto-save
+      'enableCirclesViz': 'enableCircles',
+      'enableLightningViz': 'enableLightning'
+    };    // Handle checkboxes with auto-save
     visualizationInputs.forEach(inputId => {
       const input = document.getElementById(inputId);
       if (input) {
@@ -1246,18 +1241,41 @@ class AdminSettingsManager {
           const settingKey = settingKeys[inputId];
           const enabled = input.checked;
           
-          const success = await window.settingsAPI.setSetting('visualization', settingKey, enabled, 'boolean');
-          if (success) {
-            if (window.visualizationSettings) {
-              window.visualizationSettings[settingKey] = enabled;
+          debugLog('admin', `🔍 Checkbox ${inputId} changed to:`, enabled, 'for key:', settingKey);
+          
+          // Update global settings immediately
+          if (window.visualizationSettings) {
+            window.visualizationSettings[settingKey] = enabled;
+            debugLog('admin', '🔍 Updated global settings:', window.visualizationSettings);
+          }
+          
+          // Save to Settings API (primary storage)
+          try {
+            const apiSuccess = await window.settingsAPI.setSetting('visualization', settingKey, enabled, 'boolean');
+            debugLog('admin', `🔍 Settings API save result for ${settingKey}:`, apiSuccess);
+            
+            if (apiSuccess) {
+              // Update VisualizerModule immediately
+              if (window.VisualizerModule && window.VisualizerModule.updateSettings) {
+                window.VisualizerModule.updateSettings(window.visualizationSettings);
+                debugLog('admin', '🎨 VisualizerModule updated immediately with:', window.visualizationSettings);
+              }
+              
+              debugLog('admin', `⚙️  Visualization ${settingKey}:`, enabled ? 'aktiviert' : 'deaktiviert');
+            } else {
+              // Revert checkbox on failure
+              input.checked = !enabled;
+              window.visualizationSettings[settingKey] = !enabled; // Revert global setting too
+              if (typeof window.toast !== 'undefined') {
+                window.toast.error('Fehler beim Speichern der Visualisierungs-Einstellung');
+              }
+              debugLog('admin', `❌ Failed to save ${settingKey}, reverted to:`, !enabled);
             }
-            debugLog('admin', `⚙️  Visualization ${settingKey}:`, enabled ? 'aktiviert' : 'deaktiviert');
-          } else {
-            // Revert checkbox on failure
+          } catch (error) {
+            debugLog('admin', `❌ Error saving ${settingKey}:`, error);
+            // Revert on error
             input.checked = !enabled;
-            if (typeof window.toast !== 'undefined') {
-              window.toast.error('Fehler beim Speichern der Visualisierungs-Einstellung');
-            }
+            window.visualizationSettings[settingKey] = !enabled;
           }
         });
       }
@@ -1305,12 +1323,18 @@ class AdminSettingsManager {
         currentDebugState = window.isDebuggingEnabled();
       }
       
+      debugLog('admin', '🔍 Debug toggle sync - Toggle state:', debugToggle.checked, 'System state:', currentDebugState);
+      
       // Only sync if there's actually a difference - don't fight with user clicks
       if (debugToggle.checked !== currentDebugState) {
         console.log('[ADMIN] Syncing debug toggle from', debugToggle.checked, 'to', currentDebugState);
         debugToggle.checked = currentDebugState;
         debugLog('admin', '🔧 Debug toggle synced to current state:', currentDebugState);
+      } else {
+        debugLog('admin', '✅ Debug toggle already in sync');
       }
+    } else {
+      debugLog('admin', '❌ Debug toggle element not found');
     }
   }
 
@@ -1815,19 +1839,32 @@ function hideAdminOverlay() {
   debugLog('admin', '[DEBUG] Admin-Overlay geschlossen');
 }
 
-// Helper function for admin settings fallback (referenced in handlePinSubmit)
-function getAdminSettings() {
+// Helper function for admin settings (Settings API based)
+async function getAdminSettings() {
   try {
-    const settings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-    return {
-      adminPin: settings.adminPin || '1234',
-      trackLockTimeMinutes: settings.trackLockTimeMinutes || 60,
-      debuggingEnabled: settings.debuggingEnabled || false,
-      language: settings.language || 'de',
-      ...settings
-    };
+    if (window.settingsAPI) {
+      const adminPin = await window.settingsAPI.getSetting('admin', 'adminPin', '1234');
+      const trackLockTimeMinutes = await window.settingsAPI.getSetting('admin', 'trackLockTimeMinutes', 60);
+      const debuggingEnabled = await window.settingsAPI.getSetting('admin', 'debuggingEnabled', false);
+      const language = await window.settingsAPI.getSetting('admin', 'language', 'de');
+      
+      return {
+        adminPin,
+        trackLockTimeMinutes,
+        debuggingEnabled,
+        language
+      };
+    } else {
+      debugLog('ADMIN', 'Settings API not available - using defaults');
+      return {
+        adminPin: '1234',
+        trackLockTimeMinutes: 60,
+        debuggingEnabled: false,
+        language: 'de'
+      };
+    }
   } catch (error) {
-    debugLog('ADMIN', 'Error loading admin settings from localStorage:', error);
+    debugLog('ADMIN', 'Error loading admin settings from Settings API:', error);
     return {
       adminPin: '1234',
       trackLockTimeMinutes: 60,
@@ -1836,6 +1873,9 @@ function getAdminSettings() {
     };
   }
 }
+
+// Create instance of AdminSettingsManager to handle settings loading
+// Note: Instance is created in DOMContentLoaded handler above as window.adminSettingsManager
 
 // Export functions for use in jukebox.js
 window.adminPanel = {
@@ -1849,9 +1889,18 @@ window.adminPanel = {
   updateControlsState,
   hideAdminOverlay,
   getAdminSettings,
+  // Expose settings manager for access - use global instance
+  get settingsManager() { return window.adminSettingsManager; },
   saveAdminSettings: AdminSettingsManager.prototype.saveAdminSettings,
-  // Admin settings functions
-  loadAdminSettings: AdminSettingsManager.prototype.loadAdminSettings,
+  // Admin settings functions - will be bound to actual instance later
+  loadAdminSettings: () => {
+    if (window.adminSettingsManager) {
+      return window.adminSettingsManager.loadAdminSettings();
+    } else {
+      console.warn('AdminSettingsManager not initialized yet');
+      return Promise.resolve();
+    }
+  },
   updateAdminPanelContent: AdminSettingsManager.prototype.updateAdminPanelContent,
   updateLanguageDropdown: AdminSettingsManager.prototype.updateLanguageDropdown,
   updateMusicServerStatus: AdminSettingsManager.prototype.updateMusicServerStatus,
@@ -1873,6 +1922,35 @@ window.adminPanel = {
 class GEMAReportingManager {
   constructor() {
     this.currentReportData = null;
+  }
+
+  // Event Management via Settings API
+  async getSavedEvents() {
+    try {
+      if (window.settingsAPI) {
+        return await window.settingsAPI.getSetting('events', 'savedEvents', []);
+      }
+      return [];
+    } catch (error) {
+      debugLog('admin', '[EVENTS] Error loading events from Settings API:', error);
+      return [];
+    }
+  }
+
+  async saveEventsToAPI(events) {
+    try {
+      if (window.settingsAPI) {
+        const success = await window.settingsAPI.setSetting('events', 'savedEvents', events, 'json');
+        if (success) {
+          debugLog('admin', '[EVENTS] Events saved to Settings API');
+        }
+        return success;
+      }
+      return false;
+    } catch (error) {
+      debugLog('admin', '[EVENTS] Error saving events to Settings API:', error);
+      return false;
+    }
   }
 
   // Initialize GEMA reporting system
@@ -2147,7 +2225,7 @@ class GEMAReportingManager {
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
-  saveCurrentEvent() {
+  async saveCurrentEvent() {
     const eventData = {
       id: Date.now().toString(),
       name: document.getElementById('eventName')?.value || 'Unbenannte Veranstaltung',
@@ -2164,26 +2242,32 @@ class GEMAReportingManager {
       return;
     }
     
-    // Get existing events
-    const savedEvents = JSON.parse(localStorage.getItem('savedEvents') || '[]');
+    // Get existing events from Settings API
+    const savedEvents = await this.getSavedEvents();
     
     // Add new event
     savedEvents.push(eventData);
     
-    // Save to localStorage
-    localStorage.setItem('savedEvents', JSON.stringify(savedEvents));
+    // Save to Settings API
+    const success = await this.saveEventsToAPI(savedEvents);
     
-    // Refresh the list
-    this.loadSavedEventsList();
-    
-    if (typeof window.toast !== 'undefined') {
-      window.toast.success(`Veranstaltung "${eventData.name}" gespeichert!`);
+    if (success) {
+      // Refresh the list
+      await this.loadSavedEventsList();
+      
+      if (typeof window.toast !== 'undefined') {
+        window.toast.success(`Veranstaltung "${eventData.name}" gespeichert!`);
+      }
+      debugLog('admin', '[REPORTING] Event saved to Settings API:', eventData);
+    } else {
+      if (typeof window.toast !== 'undefined') {
+        window.toast.error('Fehler beim Speichern der Veranstaltung');
+      }
     }
-    debugLog('admin', '[REPORTING] Event saved:', eventData);
   }
 
-  loadSavedEventsList() {
-    const savedEvents = JSON.parse(localStorage.getItem('savedEvents') || '[]');
+  async loadSavedEventsList() {
+    const savedEvents = await this.getSavedEvents();
     const listContainer = document.getElementById('savedEventsList');
     
     if (!listContainer) return;
@@ -2220,8 +2304,8 @@ class GEMAReportingManager {
     listContainer.innerHTML = listHTML;
   }
 
-  loadEventData(eventId) {
-    const savedEvents = JSON.parse(localStorage.getItem('savedEvents') || '[]');
+  async loadEventData(eventId) {
+    const savedEvents = await this.getSavedEvents();
     const event = savedEvents.find(e => e.id === eventId);
     
     if (!event) {
@@ -2247,19 +2331,27 @@ class GEMAReportingManager {
     }
   }
 
-  deleteEvent(eventId) {
+  async deleteEvent(eventId) {
     if (!confirm('Veranstaltung wirklich löschen?')) {
       return;
     }
     
-    const savedEvents = JSON.parse(localStorage.getItem('savedEvents') || '[]');
+    const savedEvents = await this.getSavedEvents();
     const filteredEvents = savedEvents.filter(e => e.id !== eventId);
     
-    localStorage.setItem('savedEvents', JSON.stringify(filteredEvents));
-    this.loadSavedEventsList();
+    const success = await this.saveEventsToAPI(filteredEvents);
     
-    if (typeof window.toast !== 'undefined') {
-      window.toast.success('Veranstaltung gelöscht!');
+    if (success) {
+      await this.loadSavedEventsList();
+      
+      if (typeof window.toast !== 'undefined') {
+        window.toast.success('Veranstaltung gelöscht');
+      }
+      debugLog('admin', '[REPORTING] Event deleted from Settings API:', eventId);
+    } else {
+      if (typeof window.toast !== 'undefined') {
+        window.toast.error('Fehler beim Löschen der Veranstaltung');
+      }
     }
   }
 
@@ -2614,6 +2706,7 @@ if (typeof window !== 'undefined') {
     window.adminPanel.generateReportHTML = (data) => gemaReporting.generateReportHTML(data);
     window.adminPanel.saveCurrentEvent = () => gemaReporting.saveCurrentEvent();
     window.adminPanel.downloadReportAsPDF = () => gemaReporting.downloadReportAsPDF();
+    window.adminPanel.loadSavedEventsList = () => gemaReporting.loadSavedEventsList();
   }
   
   // For backward compatibility, expose some functions globally

@@ -25,14 +25,8 @@ let currentAZFilter = 'all'; // Current A-Z filter
 // Global Spotify playback status for footer visualizer
 window.isSpotifyCurrentlyPlaying = false;
 
-// Visualization settings - declared early to avoid initialization errors
-let visualizationSettings = {
-  enableSpace: true,
-  enableFire: true,
-  enableParticles: true,
-  enableCircles: true,
-  switchInterval: 30
-};
+// Visualization settings will be loaded from Settings API by admin panel
+// Do not hardcode defaults here - admin_panel.js manages this
 
 // App state persistence (migrated to database)
 async function saveAppState() {
@@ -365,7 +359,7 @@ async function initializeApp() {
   
   // Initialize the main application
   debugLog('SYSTEM', (typeof window.i18nSystem !== 'undefined' && window.i18nSystem) ? window.i18nSystem.t('debug.system.mainInitializing') : 'Starting main initialization...');
-  initialize();
+  await initialize();
   
   // Initialize dynamic Now Playing header styling
   debugLog('UI', (typeof window.i18nSystem !== 'undefined' && window.i18nSystem) ? window.i18nSystem.t('debug.ui.nowPlayingHeaderStyling') : 'Starting Now-Playing Header Styling...');
@@ -4072,7 +4066,7 @@ function renderSpotifyResults(tracks){
   }); 
 }
 
-function initialize(){
+async function initialize(){
   debugLog('INIT', '=== Initialize gestartet ===');
   
   // Initialize APIs with correct server URL
@@ -4478,11 +4472,34 @@ function initialize(){
   
   // Initialize Now Playing Visualizer Module
   if (window.VisualizerModule) {
+    // Load settings from Settings API (async!)
+    let visualizationSettings;
+    try {
+      visualizationSettings = await window.settingsAPI?.getVisualizationSettings();
+      debugLog('UI', '[NOW-PLAYING-VISUALIZER] 🎨 Settings loaded from API:', visualizationSettings);
+    } catch (error) {
+      debugLog('UI', '[NOW-PLAYING-VISUALIZER] ⚠️ Settings API failed, using defaults:', error);
+      visualizationSettings = null;
+    }
+    
+    // Use defaults only if API failed or returned null/undefined
+    if (!visualizationSettings) {
+      visualizationSettings = {
+        enableSpace: true,
+        enableFire: true,
+        enableParticles: true,
+        enableCircles: true,
+        enableLightning: true,
+        switchInterval: 30
+      };
+      debugLog('UI', '[NOW-PLAYING-VISUALIZER] 🔧 Using fallback defaults:', visualizationSettings);
+    }
+    
     window.VisualizerModule.init({
       isMusicPlayingCallback: isAnyMusicPlaying,
       settings: visualizationSettings
     });
-    debugLog('UI', '[NOW-PLAYING-VISUALIZER] ✅ VisualizerModule initialized');
+    debugLog('UI', '[NOW-PLAYING-VISUALIZER] ✅ VisualizerModule initialized with settings:', visualizationSettings);
   } else {
     console.warn('[VISUALIZER] Module not available');
   }
@@ -4541,13 +4558,12 @@ function getAdminSettings() {
   if (window.adminPanel && window.adminPanel.getAdminSettings) {
     return window.adminPanel.getAdminSettings();
   }
-  // Fallback
-  const settings = localStorage.getItem('adminSettings');
-  return settings ? JSON.parse(settings) : { 
+  // Fallback - Settings API should be used by admin panel
+  // No hardcoded defaults to avoid overriding Settings API values
+  return { 
     adminPin: '1234', 
-    trackLockTimeMinutes: 60, 
-    debuggingEnabled: false,
-    visualizations: { enableSpace: true, enableFire: true, enableParticles: true, enableCircles: true, switchInterval: 30 }
+    trackLockTimeMinutes: 60
+    // debuggingEnabled and visualization settings managed by Settings API
   };
 }
 
@@ -4558,17 +4574,9 @@ function saveAdminSettings() {
   }
 }
 
-// Load visualization settings from admin settings
-// Visualization settings functions moved to admin_panel.js
-// Use window.adminPanel methods instead
-
-// Save visualization settings - wrapper function for consistency
-function saveVisualizationSettings() {
-  saveAdminSettings(); // Delegate to the main admin settings save function
-  debugLog('SYSTEM', 'Visualization settings saved via wrapper');
-}
-
-// Update admin panel specific content after language change
+// Playback control functions moved to js/audio.js
+// Use window.resumePlayback(), window.pausePlayback(), window.stopPlayback()
+// These are now exported from the audio module
 function updateAdminPanelContent() {
   // Use AdminPanel version if available
   if (window.adminPanel && window.adminPanel.updateAdminPanelContent) {

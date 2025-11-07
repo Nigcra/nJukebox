@@ -43,6 +43,15 @@
     baseLight: 50,
     lastUpdate: 0
   };
+
+  // Lightning visualization variables
+  let lightningBolts = [];
+  let lightningFlashes = [];
+  let nextLightningTime = 0;
+  let backgroundFlashIntensity = 0;
+  let energyPulses = [];
+  const MAX_LIGHTNING_BOLTS = 6;
+  const MAX_ENERGY_PULSES = 20;
   
   // Default visualization settings
   let visualizationSettings = {
@@ -50,6 +59,7 @@
     enableFire: true,
     enableParticles: true,
     enableCircles: true,
+    enableLightning: true,
     switchInterval: 30 // seconds
   };
   
@@ -85,6 +95,21 @@
     
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
+    
+    // Listen for visualization settings changes from admin panel
+    document.addEventListener('visualizationSettingsChanged', (event) => {
+      if (event.detail && event.detail.settings) {
+        updateSettings(event.detail.settings);
+        debugLog('VISUALIZER', '⚙️ Settings updated from admin panel:', event.detail.settings);
+        
+        // Restart mode rotation with new settings
+        if (visualizationModeChangeInterval) {
+          stopVisualizer();
+          startVisualizationModeRotation();
+          startVisualizerAnimation(options.isMusicPlayingCallback);
+        }
+      }
+    });
     
     // Initialize visualization modes
     initVisualizationModes();
@@ -161,6 +186,9 @@
               console.error('[VISUALIZER] Error in circles visualization:', error);
               currentVisualizationMode = 0;
             }
+            break;
+          case 'lightning':
+            drawLightningVisualization(time);
             break;
         }
         
@@ -781,6 +809,13 @@
         energy: Math.random()
       });
     }
+    
+    // Initialize lightning visualization
+    lightningBolts = [];
+    lightningFlashes = [];
+    nextLightningTime = 0;
+    backgroundFlashIntensity = 0;
+    energyPulses = [];
   }
   
   /**
@@ -847,9 +882,10 @@
     if (visualizationSettings.enableFire) availableModes.push('fire');
     if (visualizationSettings.enableParticles) availableModes.push('particles');
     if (visualizationSettings.enableCircles) availableModes.push('circles');
+    if (visualizationSettings.enableLightning) availableModes.push('lightning');
     
     if (availableModes.length === 0) {
-      return ['space', 'fire', 'particles', 'circles'];
+      return ['space', 'fire', 'particles', 'circles', 'lightning'];
     }
     
     return availableModes;
@@ -898,6 +934,248 @@
       }
     }, (visualizationSettings.switchInterval || 30) * 1000);
   }
+
+  /**
+   * Draw lightning visualization with electric bolts and energy effects
+   */
+  function drawLightningVisualization(time) {
+    const currentAmplitude = window.currentAmplitude || 0;
+    const centerX = nowPlayingVisualizerCanvas.width / 2;
+    const centerY = nowPlayingVisualizerCanvas.height / 2;
+    
+    // Get theme colors
+    const nowPlayingRgb = getComputedStyle(document.documentElement).getPropertyValue('--now-playing-rgb').trim();
+    let baseColor = { r: 120, g: 180, b: 255 }; // Electric blue default
+    
+    if (nowPlayingRgb) {
+      const [r, g, b] = nowPlayingRgb.split(',').map(v => parseInt(v.trim()));
+      baseColor = { r, g, b };
+    }
+    
+    // Dark stormy background with flashes
+    const gradient = nowPlayingVisualizerCtx.createRadialGradient(
+      centerX, centerY, 0,
+      centerX, centerY, Math.max(nowPlayingVisualizerCanvas.width, nowPlayingVisualizerCanvas.height) * 0.8
+    );
+    
+    const flashIntensity = backgroundFlashIntensity;
+    gradient.addColorStop(0, `rgba(${Math.floor(baseColor.r * 0.1 + flashIntensity * 50)}, ${Math.floor(baseColor.g * 0.1 + flashIntensity * 50)}, ${Math.floor(baseColor.b * 0.2 + flashIntensity * 100)}, 1)`);
+    gradient.addColorStop(0.3, `rgba(${Math.floor(baseColor.r * 0.05 + flashIntensity * 30)}, ${Math.floor(baseColor.g * 0.05 + flashIntensity * 30)}, ${Math.floor(baseColor.b * 0.15 + flashIntensity * 60)}, 1)`);
+    gradient.addColorStop(0.7, `rgba(${Math.floor(flashIntensity * 20)}, ${Math.floor(flashIntensity * 20)}, ${Math.floor(flashIntensity * 40)}, 1)`);
+    gradient.addColorStop(1, 'rgba(5, 5, 15, 1)');
+    
+    nowPlayingVisualizerCtx.fillStyle = gradient;
+    nowPlayingVisualizerCtx.fillRect(0, 0, nowPlayingVisualizerCanvas.width, nowPlayingVisualizerCanvas.height);
+    
+    // Fade background flash
+    backgroundFlashIntensity *= 0.9;
+    
+    // Generate new lightning bolts based on audio
+    if (time > nextLightningTime || currentAmplitude > 0.7) {
+      if (lightningBolts.length < MAX_LIGHTNING_BOLTS && (Math.random() < 0.3 + currentAmplitude * 0.5)) {
+        createLightningBolt(baseColor);
+        backgroundFlashIntensity = Math.min(1, backgroundFlashIntensity + 0.3 + currentAmplitude * 0.7);
+        nextLightningTime = time + 100 + Math.random() * 500;
+      }
+    }
+    
+    // Draw lightning bolts
+    nowPlayingVisualizerCtx.shadowBlur = 15;
+    nowPlayingVisualizerCtx.shadowColor = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.8)`;
+    
+    for (let i = lightningBolts.length - 1; i >= 0; i--) {
+      const bolt = lightningBolts[i];
+      drawLightningBolt(bolt, baseColor);
+      
+      bolt.life -= 1;
+      if (bolt.life <= 0) {
+        lightningBolts.splice(i, 1);
+      }
+    }
+    
+    nowPlayingVisualizerCtx.shadowBlur = 0;
+    
+    // Generate energy pulses from center
+    if (currentAmplitude > 0.3 && energyPulses.length < MAX_ENERGY_PULSES && Math.random() < 0.4) {
+      energyPulses.push({
+        x: centerX + (Math.random() - 0.5) * 100,
+        y: centerY + (Math.random() - 0.5) * 100,
+        radius: 5,
+        maxRadius: 50 + currentAmplitude * 100,
+        opacity: 0.8,
+        speed: 2 + currentAmplitude * 3,
+        life: 60
+      });
+    }
+    
+    // Draw energy pulses
+    for (let i = energyPulses.length - 1; i >= 0; i--) {
+      const pulse = energyPulses[i];
+      
+      nowPlayingVisualizerCtx.beginPath();
+      nowPlayingVisualizerCtx.arc(pulse.x, pulse.y, pulse.radius, 0, Math.PI * 2);
+      
+      const pulseGradient = nowPlayingVisualizerCtx.createRadialGradient(
+        pulse.x, pulse.y, 0,
+        pulse.x, pulse.y, pulse.radius
+      );
+      
+      pulseGradient.addColorStop(0, `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${pulse.opacity})`);
+      pulseGradient.addColorStop(0.7, `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${pulse.opacity * 0.3})`);
+      pulseGradient.addColorStop(1, `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0)`);
+      
+      nowPlayingVisualizerCtx.fillStyle = pulseGradient;
+      nowPlayingVisualizerCtx.fill();
+      
+      pulse.radius += pulse.speed;
+      pulse.opacity *= 0.98;
+      pulse.life--;
+      
+      if (pulse.radius >= pulse.maxRadius || pulse.life <= 0) {
+        energyPulses.splice(i, 1);
+      }
+    }
+    
+    // Electric grid effect
+    if (currentAmplitude > 0.2) {
+      drawElectricGrid(baseColor, currentAmplitude, time);
+    }
+  }
+  
+  /**
+   * Create a new lightning bolt
+   */
+  function createLightningBolt(baseColor) {
+    const startX = Math.random() * nowPlayingVisualizerCanvas.width;
+    const startY = Math.random() * nowPlayingVisualizerCanvas.height * 0.3; // Start from top area
+    const endX = Math.random() * nowPlayingVisualizerCanvas.width;
+    const endY = nowPlayingVisualizerCanvas.height * (0.7 + Math.random() * 0.3); // End in bottom area
+    
+    const segments = [];
+    const numSegments = 8 + Math.floor(Math.random() * 12);
+    
+    for (let i = 0; i <= numSegments; i++) {
+      const progress = i / numSegments;
+      const x = startX + (endX - startX) * progress + (Math.random() - 0.5) * 50 * (1 - progress);
+      const y = startY + (endY - startY) * progress + (Math.random() - 0.5) * 30;
+      segments.push({ x, y });
+    }
+    
+    lightningBolts.push({
+      segments,
+      thickness: 2 + Math.random() * 3,
+      opacity: 0.8 + Math.random() * 0.2,
+      life: 10 + Math.floor(Math.random() * 15),
+      branches: Math.random() < 0.7 ? createLightningBranches(segments, 2 + Math.floor(Math.random() * 3)) : []
+    });
+  }
+  
+  /**
+   * Create lightning branches
+   */
+  function createLightningBranches(mainSegments, numBranches) {
+    const branches = [];
+    
+    for (let b = 0; b < numBranches; b++) {
+      const branchStartIndex = Math.floor(mainSegments.length * 0.3 + Math.random() * mainSegments.length * 0.4);
+      const startPoint = mainSegments[branchStartIndex];
+      
+      const branchSegments = [startPoint];
+      const branchLength = 3 + Math.floor(Math.random() * 6);
+      
+      let currentX = startPoint.x;
+      let currentY = startPoint.y;
+      
+      for (let i = 1; i <= branchLength; i++) {
+        currentX += (Math.random() - 0.5) * 40;
+        currentY += Math.random() * 30 + 10;
+        branchSegments.push({ x: currentX, y: currentY });
+      }
+      
+      branches.push({
+        segments: branchSegments,
+        thickness: 1 + Math.random() * 2,
+        opacity: 0.6 + Math.random() * 0.3
+      });
+    }
+    
+    return branches;
+  }
+  
+  /**
+   * Draw a lightning bolt
+   */
+  function drawLightningBolt(bolt, baseColor) {
+    const fadeOpacity = bolt.life / 25;
+    
+    // Draw main bolt
+    nowPlayingVisualizerCtx.strokeStyle = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${bolt.opacity * fadeOpacity})`;
+    nowPlayingVisualizerCtx.lineWidth = bolt.thickness;
+    nowPlayingVisualizerCtx.lineCap = 'round';
+    nowPlayingVisualizerCtx.lineJoin = 'round';
+    
+    nowPlayingVisualizerCtx.beginPath();
+    nowPlayingVisualizerCtx.moveTo(bolt.segments[0].x, bolt.segments[0].y);
+    
+    for (let i = 1; i < bolt.segments.length; i++) {
+      nowPlayingVisualizerCtx.lineTo(bolt.segments[i].x, bolt.segments[i].y);
+    }
+    
+    nowPlayingVisualizerCtx.stroke();
+    
+    // Draw glow effect
+    nowPlayingVisualizerCtx.strokeStyle = `rgba(255, 255, 255, ${0.8 * fadeOpacity})`;
+    nowPlayingVisualizerCtx.lineWidth = Math.max(1, bolt.thickness - 1);
+    nowPlayingVisualizerCtx.stroke();
+    
+    // Draw branches
+    for (const branch of bolt.branches) {
+      nowPlayingVisualizerCtx.strokeStyle = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${branch.opacity * fadeOpacity * 0.7})`;
+      nowPlayingVisualizerCtx.lineWidth = branch.thickness;
+      
+      nowPlayingVisualizerCtx.beginPath();
+      nowPlayingVisualizerCtx.moveTo(branch.segments[0].x, branch.segments[0].y);
+      
+      for (let i = 1; i < branch.segments.length; i++) {
+        nowPlayingVisualizerCtx.lineTo(branch.segments[i].x, branch.segments[i].y);
+      }
+      
+      nowPlayingVisualizerCtx.stroke();
+    }
+  }
+  
+  /**
+   * Draw electric grid effect
+   */
+  function drawElectricGrid(baseColor, amplitude, time) {
+    const gridSize = 40;
+    const width = nowPlayingVisualizerCanvas.width;
+    const height = nowPlayingVisualizerCanvas.height;
+    
+    nowPlayingVisualizerCtx.strokeStyle = `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, ${0.1 + amplitude * 0.3})`;
+    nowPlayingVisualizerCtx.lineWidth = 1;
+    
+    // Animated grid with electric pulses
+    for (let x = 0; x <= width; x += gridSize) {
+      if (Math.random() < 0.3 + amplitude * 0.5) {
+        const offset = Math.sin(time * 0.01 + x * 0.01) * 10;
+        nowPlayingVisualizerCtx.beginPath();
+        nowPlayingVisualizerCtx.moveTo(x + offset, 0);
+        nowPlayingVisualizerCtx.lineTo(x + offset, height);
+        nowPlayingVisualizerCtx.stroke();
+      }
+    }
+    
+    for (let y = 0; y <= height; y += gridSize) {
+      if (Math.random() < 0.3 + amplitude * 0.5) {
+        const offset = Math.cos(time * 0.01 + y * 0.01) * 10;
+        nowPlayingVisualizerCtx.beginPath();
+        nowPlayingVisualizerCtx.moveTo(0, y + offset);
+        nowPlayingVisualizerCtx.lineTo(width, y + offset);
+        nowPlayingVisualizerCtx.stroke();
+      }
+    }
+  }
   
   /**
    * Stop visualizer
@@ -940,7 +1218,9 @@
     init: initVisualizer,
     stop: stopVisualizer,
     updateSettings: updateSettings,
-    initModes: initVisualizationModes
+    initModes: initVisualizationModes,
+    getAvailableModes: getAvailableVisualizationModes,
+    getCurrentModeName: getCurrentVisualizationModeName
   };
   
 })();

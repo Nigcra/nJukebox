@@ -95,27 +95,20 @@ async function loadDebuggingStatus() {
       isDebuggingEnabled = debuggingEnabled;
       debugLog('SYSTEM', 'Debugging status loaded from Settings API:', isDebuggingEnabled ? 'ACTIVE' : 'INACTIVE');
     } else {
-      // Fallback to localStorage
-      const settings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-      isDebuggingEnabled = settings.debuggingEnabled || false;
-      debugLog('SYSTEM', 'Debugging status loaded from localStorage:', isDebuggingEnabled ? 'ACTIVE' : 'INACTIVE');
+      // No Settings API available - keep current state
+      debugLog('SYSTEM', 'Settings API not available - keeping current debug state:', isDebuggingEnabled ? 'ACTIVE' : 'INACTIVE');
     }
     
     // Update data server debug status
     updateDataServerDebugStatus();
   } catch (error) {
     console.warn('Failed to load debugging status:', error);
-    // Fallback to localStorage
-    try {
-      const settings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-      isDebuggingEnabled = settings.debuggingEnabled || false;
-    } catch (fallbackError) {
-      console.warn('Failed to load from localStorage fallback:', fallbackError);
-    }
+    // Keep current state instead of localStorage fallback
+    debugLog('SYSTEM', 'Failed to load debug status - keeping current state:', isDebuggingEnabled ? 'ACTIVE' : 'INACTIVE');
   }
 }
 
-// Save debugging status to Settings API (with localStorage fallback)
+// Save debugging status to Settings API
 async function saveDebuggingStatus() {
   try {
     if (window.settingsAPI) {
@@ -126,26 +119,15 @@ async function saveDebuggingStatus() {
         throw new Error('Settings API save failed');
       }
     } else {
-      // Fallback to localStorage
-      const settings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-      settings.debuggingEnabled = isDebuggingEnabled;
-      localStorage.setItem('adminSettings', JSON.stringify(settings));
-      debugLog('SYSTEM', 'Debugging status saved to localStorage:', isDebuggingEnabled ? 'ACTIVE' : 'INACTIVE');
+      debugLog('SYSTEM', 'Settings API not available - debug state not persisted');
     }
     
     // Update data server debug status
     updateDataServerDebugStatus();
   } catch (error) {
-    console.warn('Failed to save debugging status to Settings API, using localStorage:', error);
-    try {
-      // Fallback to localStorage
-      const settings = JSON.parse(localStorage.getItem('adminSettings') || '{}');
-      settings.debuggingEnabled = isDebuggingEnabled;
-      localStorage.setItem('adminSettings', JSON.stringify(settings));
-      updateDataServerDebugStatus();
-    } catch (fallbackError) {
-      console.warn('Failed to save debugging status:', fallbackError);
-    }
+    console.warn('Failed to save debugging status to Settings API:', error);
+    // No localStorage fallback - Settings API should be available
+    updateDataServerDebugStatus();
   }
 }
 

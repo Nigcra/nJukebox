@@ -802,7 +802,6 @@ class AdminSettingsManager {
         enableFire: true,
         enableParticles: false,
         enableCircles: true,
-        enableLightning: true,
         switchInterval: 30
       };
 
@@ -821,24 +820,7 @@ class AdminSettingsManager {
       const updatedVisualizationSettings = await window.settingsAPI.getVisualizationSettings();
       debugLog('admin', '🔍 Final visualization settings:', updatedVisualizationSettings);
       
-      // Verify Lightning setting specifically
-      if (updatedVisualizationSettings.enableLightning) {
-        debugLog('admin', '✅ Lightning setting loaded successfully:', updatedVisualizationSettings.enableLightning);
-      } else {
-        debugLog('admin', '❌ Lightning setting still missing after creation attempt');
-        // Try to create it again with more debugging
-        const lightningSuccess = await window.settingsAPI.setSetting('visualization', 'enableLightning', true, 'boolean');
-        debugLog('admin', '🔄 Retry Lightning creation result:', lightningSuccess);
-      }
 
-      // Ensure Lightning setting exists with default value
-      if (updatedVisualizationSettings.enableLightning === undefined || updatedVisualizationSettings.enableLightning === null) {
-        debugLog('admin', '🔍 Lightning setting not found, creating with default value');
-        await window.settingsAPI.setSetting('visualization', 'enableLightning', true, 'boolean');
-        // Reload visualization settings to get the newly created setting
-        const reloadedSettings = await window.settingsAPI.getVisualizationSettings();
-        Object.assign(updatedVisualizationSettings, reloadedSettings);
-      }
 
       // Update debug system FIRST to set the correct state
       const debugEnabled = adminSettings.debuggingEnabled?.value ?? adminSettings.debuggingEnabled ?? false;
@@ -932,7 +914,7 @@ class AdminSettingsManager {
     const enableFireViz = document.getElementById('enableFireViz');
     const enableParticlesViz = document.getElementById('enableParticlesViz');
     const enableCirclesViz = document.getElementById('enableCirclesViz');
-    const enableLightningViz = document.getElementById('enableLightningViz');
+
     const switchIntervalInput = document.getElementById('visualizationSwitchInterval');
 
     // Get current live values from global visualizationSettings with robust fallback
@@ -973,13 +955,7 @@ class AdminSettingsManager {
       enableCirclesViz.checked = currentValue;
       debugLog('admin', '🔍 Circles checkbox set to:', currentValue);
     }
-    if (enableLightningViz) {
-      const currentValue = currentSettings.enableLightning !== undefined ? 
-        currentSettings.enableLightning : 
-        getValue(visualizationSettings.enableLightning, true);
-      enableLightningViz.checked = currentValue;
-      debugLog('admin', '🔍 Lightning checkbox set to:', currentValue, 'from settings:', visualizationSettings.enableLightning, 'extracted value:', getValue(visualizationSettings.enableLightning, true));
-    }
+
     if (switchIntervalInput) {
       const currentValue = currentSettings.switchInterval !== undefined ? 
         currentSettings.switchInterval : visualizationSettings.switchInterval?.value ?? 30;
@@ -991,7 +967,6 @@ class AdminSettingsManager {
       fire: enableFireViz?.checked,
       particles: enableParticlesViz?.checked,
       circles: enableCirclesViz?.checked,
-      lightning: enableLightningViz?.checked,
       interval: switchIntervalInput?.value
     });
   }
@@ -1018,7 +993,6 @@ class AdminSettingsManager {
         enableFire: getValue(visualizationSettings.enableFire, true),
         enableParticles: getValue(visualizationSettings.enableParticles, false),
         enableCircles: getValue(visualizationSettings.enableCircles, true),
-        enableLightning: getValue(visualizationSettings.enableLightning, true),
         switchInterval: getValue(visualizationSettings.switchInterval, 30)
       };
       
@@ -1151,16 +1125,14 @@ class AdminSettingsManager {
       'enableSpaceViz',
       'enableFireViz',
       'enableParticlesViz',
-      'enableCirclesViz',
-      'enableLightningViz'
+      'enableCirclesViz'
     ];
 
     const settingKeys = {
       'enableSpaceViz': 'enableSpace',
       'enableFireViz': 'enableFire',
       'enableParticlesViz': 'enableParticles',
-      'enableCirclesViz': 'enableCircles',
-      'enableLightningViz': 'enableLightning'
+      'enableCirclesViz': 'enableCircles'
     };    // Handle checkboxes with auto-save
     visualizationInputs.forEach(inputId => {
       const input = document.getElementById(inputId);

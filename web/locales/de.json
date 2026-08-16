@@ -134,6 +134,8 @@
       "autoDjAudio": "🤖 Auto-DJ & Audio-Steuerung",
       "enableAutoDj": "Auto-DJ aktivieren",
       "autoPlayDescription": "Spielt automatisch Songs wenn die Playlist leer ist",
+      "crossfadeDuration": "Übergang zwischen Titeln (Sekunden)",
+      "crossfadeDescription": "0 = aus. Lokale Titel und der Wechsel zwischen lokal und Spotify blenden ineinander über. Zwei Spotify-Titel nacheinander werden aus- und wieder eingeblendet.",
       "start": "Start",
       "quit": "Jukebox beenden",
       "dataServer": "Data Server",

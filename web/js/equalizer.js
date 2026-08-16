@@ -283,6 +283,39 @@
   }
 
   /**
+   * Hängt ein weiteres Audio-Element an den Analyser.
+   *
+   * Die lokale Wiedergabe laeuft ueber zwei Decks, damit ein Titel in den
+   * naechsten uebergeblendet werden kann. tryAudioCapture() kennt nur das eine
+   * Element, das initEqualizer() bekommen hat - das zweite muss hier nachgereicht
+   * werden, sonst bleibt der Equalizer bei jedem Titel stumm, der durch eine
+   * Ueberblendung auf dem anderen Deck gelandet ist.
+   *
+   * @param {HTMLAudioElement} audioElement - Das zusaetzliche Audio-Element
+   * @returns {boolean} Ob die Quelle verbunden wurde
+   */
+  function attachElement(audioElement) {
+    if (!equalizerAudioCtx || !equalizerAnalyser || !audioElement) {
+      return false;
+    }
+    if (typeof audioElement.captureStream !== 'function') {
+      return false;
+    }
+
+    try {
+      const stream = audioElement.captureStream();
+      const source = equalizerAudioCtx.createMediaStreamSource(stream);
+      source.connect(equalizerAnalyser);
+      connectedSources.push('local audio element ' + (audioElement.id || 'unnamed') + ' (captureStream)');
+      debugLog('main', '[EQUALIZER] ✅ Zusaetzliches Audio-Element verbunden:', audioElement.id);
+      return true;
+    } catch (e) {
+      debugLog('main', '[EQUALIZER] ⚠️ Zusaetzliches Audio-Element nicht verbunden:', e.message);
+      return false;
+    }
+  }
+
+  /**
    * Start the equalizer animation loop
    * @param {Function} isMusicPlayingCallback - Function to check if music is playing
    */
@@ -486,6 +519,7 @@
 
   window.EqualizerModule = {
     init: initEqualizer,
+    attachElement: attachElement,
     stop: stopEqualizer,
     resize: resizeEqualizer,
     diagnostics: equalizerDiagnostics

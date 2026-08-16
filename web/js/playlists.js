@@ -330,6 +330,21 @@ function initializeAutoDjAndPlaylists() {
     });
   }
 
+  // Length of the transition between two titles. Saved on every keystroke like
+  // the toggle above - there is no save button in this section, and a value
+  // that is only stored on blur is a value the next reload has lost.
+  const crossfadeInput = document.getElementById('crossfadeDuration');
+  if (crossfadeInput && typeof setCrossfadeSeconds === 'function') {
+    const applyCrossfade = (e) => setCrossfadeSeconds(e.target.value);
+    crossfadeInput.addEventListener('input', applyCrossfade);
+    // The change alone writes the clamped value back into the field, so typing
+    // 99 leaves 12 standing rather than a number that is not what is in effect.
+    crossfadeInput.addEventListener('change', (e) => {
+      const seconds = setCrossfadeSeconds(e.target.value);
+      e.target.value = String(seconds);
+    });
+  }
+
   // Restore the stored state. completeAutoDjInitialization() was meant for this
   // - a function nobody calls, which is why the auto DJ came up switched off
   // after every reload no matter how it was left. loadAutoDjSettings() brings

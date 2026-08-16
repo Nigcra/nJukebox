@@ -37,7 +37,10 @@ async function saveAppState() {
     currentView: currentView,
     currentAZFilter: currentAZFilter,
     playedTracks: playedTracks,
-    volume: audioPlayer ? audioPlayer.volume : 0.7,
+    // getVolume() und nicht audioPlayer.volume: am Element steht seit der
+    // Ueberblendung Grundlautstaerke mal Blendenfaktor. Ein Speichern mitten in
+    // einer Blende haette also fast 0 gesichert.
+    volume: typeof getVolume === 'function' ? getVolume() : (audioPlayer ? audioPlayer.volume : 0.7),
     timestamp: Date.now()
   };
   
@@ -467,7 +470,7 @@ async function initializeApp() {
             pinPnl.classList.add('hidden'); 
             adminCtrls.classList.remove('hidden');
             if (volSlider && audioEl) {
-              volSlider.value = audioEl.volume.toString();
+              volSlider.value = (typeof getVolume === "function" ? getVolume() : audioEl.volume).toString();
             }
             
             // Update admin panel status
@@ -486,7 +489,7 @@ async function initializeApp() {
           pinPnl.classList.remove('hidden'); 
           adminCtrls.classList.add('hidden'); 
           if (volSlider && audioEl) {
-            volSlider.value = audioEl.volume.toString();
+            volSlider.value = (typeof getVolume === "function" ? getVolume() : audioEl.volume).toString();
           }
         }
       }
@@ -527,7 +530,7 @@ async function initializeApp() {
             pinPnl.classList.add('hidden'); 
             adminCtrls.classList.remove('hidden');
             if (volSlider && audioEl) {
-              volSlider.value = audioEl.volume.toString();
+              volSlider.value = (typeof getVolume === "function" ? getVolume() : audioEl.volume).toString();
             }
             
             // Update admin panel status
@@ -3277,7 +3280,10 @@ let isAddingToQueue = false; // Flag to prevent navigation activity during addTo
 // clearPlaylist function moved to js/playlists.js
 // playCurrentTrack moved to js/audio.js
 
-function skipTrack(){ 
+// options.crossfade is handed straight through to playCurrentTrack(): the
+// previous title is being faded out and has to keep playing. js/crossfade.js is
+// the only caller that sets it; everything else gets the hard cut it always had.
+function skipTrack(options){
   debugLog('queue', `[SKIP] skipTrack called. Current index: ${currentTrackIndex}, Queue length: ${queue.length}`);
   
   // If we're already at the end of the queue (-1), don't do anything
@@ -3314,7 +3320,7 @@ function skipTrack(){
       currentTrackIndex++;
       debugLog('queue', `[SKIP] Playing next track at index: ${currentTrackIndex}`);
       saveAppState(); // Save state after index change
-      playCurrentTrack(); 
+      playCurrentTrack(options);
     } else {
       // We're at the end of the queue
       debugLog('queue', `[SKIP] Reached end of queue - clearing queue completely`);
@@ -4225,17 +4231,26 @@ async function initialize(){
       }
     }, 200); // Noch schnellere Reaktion 
   });
-  audioPlayer.addEventListener('ended', skipTrack);
-  
-  // Time update listener for progress bar
-  audioPlayer.addEventListener('timeupdate', () => {
-    if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
-      const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-      progressBar.value = progress;
-      // debugLog('ui', '[DEBUG] Progress updated:', progress.toFixed(1) + '%'); // Uncomment for debugging
-    } else {
-      progressBar.value = 0;
-    }
+  // No "ended" listener here on purpose. js/audio.js already advances the queue
+  // for whichever deck is the current one; a second one on this element skipped
+  // a title on every end, and with two decks it would also fire for the
+  // outgoing side of a crossfade.
+
+  // Time update listener for progress bar. Both decks are wired, and each one
+  // only reports while it is the current deck - after a crossfade that is the
+  // other one, and a listener on this element alone would freeze the bar.
+  (window.getAudioDecks ? window.getAudioDecks() : [audioPlayer]).forEach(deck => {
+    if (!deck) return;
+    deck.addEventListener('timeupdate', () => {
+      if (window.getActiveAudioDeck && window.getActiveAudioDeck() !== deck) return;
+      if (deck.duration && !isNaN(deck.duration)) {
+        const progress = (deck.currentTime / deck.duration) * 100;
+        progressBar.value = progress;
+        // debugLog('ui', '[DEBUG] Progress updated:', progress.toFixed(1) + '%'); // Uncomment for debugging
+      } else {
+        progressBar.value = 0;
+      }
+    });
   });
   
   // Progress bar input listener for seeking
@@ -4260,7 +4275,17 @@ async function initialize(){
   // Initialize visualizers AFTER all other variables are initialized
   debugLog('main', '[EQUALIZER] 🎯 About to call Equalizer Module...');
   if (window.EqualizerModule && equalizerCanvas) {
-    window.EqualizerModule.init(equalizerCanvas, audioPlayer, isAnyMusicPlaying).catch(err => {
+    window.EqualizerModule.init(equalizerCanvas, audioPlayer, isAnyMusicPlaying).then(() => {
+      // The second deck has to reach the analyser too. Without it the equalizer
+      // falls silent for every local title that landed on deck B through a
+      // crossfade - the microphone still covers it, but only if it is allowed.
+      const decks = window.getAudioDecks ? window.getAudioDecks() : [];
+      decks.forEach(deck => {
+        if (deck !== audioPlayer && window.EqualizerModule.attachElement) {
+          window.EqualizerModule.attachElement(deck);
+        }
+      });
+    }).catch(err => {
       console.error('[EQUALIZER] ❌ Initialization failed:', err);
       debugLog('main', '[EQUALIZER] ❌ Init error:', err.message, err.stack);
     });
@@ -5667,10 +5692,19 @@ function initializeAdminAutoLearnTabs() {
 
 // The predefined auto learning playlists.
 //
-// filters becomes the Spotify search query. The decades combine the year with a
-// genre, otherwise "80s Party" would drag in every ballad of the decade. id
-// keeps the learned playlist together across runs: a second click replaces it
-// instead of putting a copy next to it.
+// An entry carries either filters or spotifyPlaylist, never both:
+//
+//   filters         becomes the Spotify search query. The decades combine the
+//                   year with a genre, otherwise "80s Party" would drag in
+//                   every ballad of the decade.
+//   spotifyPlaylist is the id of a real Spotify playlist, taken verbatim. Use
+//                   it when a list is curated by hand and no search query comes
+//                   close to it.
+//
+// id keeps the learned playlist together across runs: a second click replaces
+// it instead of putting a copy next to it. It stays put even when the name
+// changes - a renamed button is meant to overwrite what it learned before, not
+// to leave the old list orphaned in the library.
 //
 // The genres are measured, not guessed: Spotify's genre filter matches the
 // artist's genres, and those are coarse. Niche terms come back empty -
@@ -5680,14 +5714,23 @@ function initializeAdminAutoLearnTabs() {
 //
 //   GET /v1/search?type=track&limit=1&q=<query>   -> "total" in the result
 const PARTY_PLAYLISTS = [
-  { button: 'learnPartyHits', id: 'party_hits',     name: 'Party Hits',          filters: { genre: 'party' } },
+  // genre:party stand hier bis 2026-08 und lieferte gemessen deutsche
+  // Stimmungsware - "Geh mal Bier hol'n", "Und wer im Januar geboren ist".
+  // genre:"dance pop" bringt bei 100 Treffern Guetta/Sia, Ace of Base,
+  // Flo Rida, Ava Max.
+  { button: 'learnPartyHits', id: 'party_hits',     name: 'Dance Party',         filters: { genre: 'dance pop' } },
   { button: 'learnSchlager',  id: 'party_schlager', name: 'Schlager Party',      filters: { genre: 'schlager' } },
   { button: 'learnDanceHits', id: 'party_dance',    name: 'Dance Party',         filters: { genre: 'dance' } },
   { button: 'learn70s',       id: 'party_70s',      name: '70er Party',          filters: { year: '1970-1979', genre: 'soul' } },
   { button: 'learn80s',       id: 'party_80s',      name: '80er Party',          filters: { year: '1980-1989', genre: 'pop' } },
   { button: 'learn90s',       id: 'party_90s',      name: '90er Party',          filters: { year: '1990-1999', genre: 'dance' } },
   { button: 'learn2000s',     id: 'party_2000s',    name: '2000er Party',        filters: { year: '2000-2009', genre: 'dance' } },
-  { button: 'learnLounge',    id: 'party_lounge',   name: 'Summer Lounge Party', filters: { genre: 'lounge' } }
+  // Fest verdrahtet statt gesucht: Spotify kennt chillout, summer, ibiza und
+  // reggaeton gar nicht als Genre (0 Treffer), tropical house hat 3 und
+  // balearic 38 - eine Suche kommt an eine von Hand gepflegte Liste hier nicht
+  // heran. genre:lounge waere die einzige mit Substanz und liefert gemessen
+  // italienisches Easy Listening.
+  { button: 'learnLounge',    id: 'party_lounge',   name: 'Chillout Lounge',     spotifyPlaylist: '0NHDUXVEsoFMwzkrYaRHG0' }
 ];
 
 // Land, auf das sich Spotify bei Suche und Playlist-Abruf beziehen soll. Leer
@@ -5819,10 +5862,72 @@ function renderAutoLearnStats() {
 
 // Baut die Suchanfrage aus den Filtern. Der Doppelpunkt bleibt roh, sonst liest
 // Spotify das Ganze als Suchbegriff statt als Filter; kodiert wird nur der Wert.
+//
+// Werte mit Leerzeichen kommen in Anfuehrungszeichen. Ohne sie zerfaellt
+// genre:dance pop in den Filter genre:dance und den Suchbegriff pop - gemessen
+// liefert das eine sichtbar andere Liste. Einwortige Werte bleiben unberuehrt,
+// die Anfragen der uebrigen Playlists aendern sich also nicht.
 function buildSpotifyQuery(filters) {
   return Object.entries(filters)
-    .map(([key, value]) => `${key}:${encodeURIComponent(value)}`)
+    .map(([key, value]) => {
+      const raw = String(value);
+      const quoted = raw.includes(' ') ? `"${raw}"` : raw;
+      return `${key}:${encodeURIComponent(quoted)}`;
+    })
     .join('%20');
+}
+
+// Holt die Titel einer Suchanfrage. Mehr als 50 gibt die Suche ohnehin nicht
+// her, ohne durch die Seiten zu blaettern.
+async function fetchSearchTracks(query) {
+  const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=50&q=${query}`), {
+    headers: { 'Authorization': `Bearer ${spotifyAccessToken}` }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Spotify API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.tracks?.items || [];
+}
+
+// Obergrenze fuer eine fest verdrahtete Playlist. Sie steht nur da, damit eine
+// versehentlich verlinkte Riesenliste die Bibliothek nicht flutet; wird sie
+// erreicht, steht es im Log statt still abgeschnitten zu werden.
+const SPOTIFY_PLAYLIST_MAX_TRACKS = 500;
+
+// Holt die Titel einer fest verdrahteten Spotify-Playlist, ueber alle Seiten.
+//
+// Anders als bei der Suche wird hier geblaettert: eine Playlist hat eine feste
+// Laenge, und wer sie verdrahtet, will sie ganz und nicht die ersten 50.
+async function fetchSpotifyPlaylistTracks(spotifyPlaylistId) {
+  const tracks = [];
+  // withSpotifyMarket nur auf die erste URL: Spotify haengt die Parameter der
+  // Anfrage an next wieder an, ein zweiter Aufruf haette market verdoppelt.
+  let url = withSpotifyMarket(`https://api.spotify.com/v1/playlists/${spotifyPlaylistId}/tracks?limit=100`);
+
+  while (url && tracks.length < SPOTIFY_PLAYLIST_MAX_TRACKS) {
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${spotifyAccessToken}` }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Spotify API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    // Podcast-Folgen haben keine artists und landeten sonst als "Unknown
+    // Artist" in der Bibliothek.
+    tracks.push(...playablePlaylistTracks(data.items).filter(track => track.type !== 'episode'));
+    url = data.next || null;
+  }
+
+  if (url) {
+    debugLog('main', `[AUTO-LEARN] Playlist ${spotifyPlaylistId} bei ${SPOTIFY_PLAYLIST_MAX_TRACKS} Titeln abgeschnitten`);
+  }
+
+  return tracks.slice(0, SPOTIFY_PLAYLIST_MAX_TRACKS);
 }
 
 async function learnPartyPlaylist(playlist, button = null) {
@@ -5830,7 +5935,20 @@ async function learnPartyPlaylist(playlist, button = null) {
     button = event.target;
   }
 
-  return learnFromSearch(buildSpotifyQuery(playlist.filters), playlist.id, playlist.name, 'party', button);
+  // Verdrahtete Playlist oder Suche - beide laufen durch dieselbe Buchfuehrung,
+  // damit auch der verdrahtete Knopf seine "N Titel · vor X"-Zeile bekommt.
+  // learnFromSpotifyPlaylist() taete das nicht: es legt die Liste unter
+  // spotify_<id> ab und merkt sich nichts fuer die Knopfbeschriftung.
+  const wired = !!playlist.spotifyPlaylist;
+  const fetchTracks = wired
+    ? () => fetchSpotifyPlaylistTracks(playlist.spotifyPlaylist)
+    : () => fetchSearchTracks(buildSpotifyQuery(playlist.filters));
+
+  const emptyHint = wired
+    ? 'die verdrahtete Playlist ist leer oder nicht erreichbar.'
+    : 'die Suche trifft nichts.';
+
+  return learnTracks(fetchTracks, playlist.id, playlist.name, 'party', button, emptyHint);
 }
 
 // Verdrahtet die Knoepfe des Auto-Learnings. Eigener Name, weil sie aus zwei
@@ -6192,34 +6310,30 @@ async function learnFromGenre(genre, name, category = 'general', button = null) 
   return learnFromSearch(`genre:${encodeURIComponent(genre)}`, `genre_${genre.replace(/\s+/g, '_')}`, name, category, button);
 }
 
-// Gemeinsamer Unterbau der Auto-Learning-Knoepfe. query ist die fertige
-// Suchanfrage, playlistId haelt die gelernte Playlist zusammen, damit derselbe
-// Knopf zweimal gedrueckt nicht zwei Eintraege anlegt.
-async function learnFromSearch(query, playlistId, name, category = 'general', button = null) {
+// Gemeinsamer Unterbau der Auto-Learning-Knoepfe. fetchTracks liefert die rohen
+// Spotify-Titel - aus einer Suche oder aus einer verdrahteten Playlist -,
+// playlistId haelt die gelernte Playlist zusammen, damit derselbe Knopf zweimal
+// gedrueckt nicht zwei Eintraege anlegt.
+//
+// Das Holen steckt bewusst in fetchTracks und nicht hier: alles darunter -
+// Bibliothek, Auto-DJ-Liste, gemerkte Trefferzahl, Knopfbeschriftung - ist fuer
+// beide Quellen gleich und soll es bleiben.
+async function learnTracks(fetchTracks, playlistId, name, category = 'general', button = null, emptyHint = 'die Suche trifft nichts.') {
   if (!spotifyAccessToken) {
     toast.error('Spotify-Authentifizierung erforderlich');
     return;
   }
-  
+
   let originalText = '';
   if (button) {
     originalText = button.innerHTML;
     button.innerHTML = '⏳ Lade...';
     button.disabled = true;
   }
-  
+
   try {
-    const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=50&q=${query}`), {
-      headers: { 'Authorization': `Bearer ${spotifyAccessToken}` }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Spotify API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const tracks = data.tracks?.items || [];
-    
+    const tracks = await fetchTracks();
+
     await bulkAddSpotifyTracks(tracks, name);
     
     // Speichere Playlist auch im Auto-DJ System
@@ -6257,7 +6371,7 @@ async function learnFromSearch(query, playlistId, name, category = 'general', bu
     // dass die Suchanfrage nichts trifft. Ohne diesen Hinweis sah der Knopf
     // aus, als habe er gearbeitet.
     if (tracks.length === 0) {
-      toast.info(`"${name}" hat nichts gefunden - die Suche trifft nichts.`);
+      toast.info(`"${name}" hat nichts gefunden - ${emptyHint}`);
     } else {
       toast.success(`${tracks.length} Titel für "${name}" hinzugefügt!`);
     }
@@ -6277,6 +6391,12 @@ async function learnFromSearch(query, playlistId, name, category = 'general', bu
     // wuerde die eben gemerkte Zahl sonst wieder verdecken.
     renderAutoLearnStats();
   }
+}
+
+// Bisheriger Name und Signatur, damit die uebrigen Aufrufer unveraendert
+// bleiben: learnFromGenre() und alles, was eine fertige Suchanfrage hat.
+async function learnFromSearch(query, playlistId, name, category = 'general', button = null) {
+  return learnTracks(() => fetchSearchTracks(query), playlistId, name, category, button);
 }
 
 async function learnAllGermanyPlaylists() {
@@ -7025,13 +7145,63 @@ let lastPlaybackStopTime = null;
 let userManuallyStoppedMusic = false;
 
 // Auto-DJ Settings
+//
+// maxTracksToAdd stand hier bis 2026-08 und deckelte, wie viel aus einer
+// Playlist in die Warteschlange kam. Es gibt keinen Deckel mehr: eine Playlist
+// mit 300 Titeln wird ganz eingereiht. Die Obergrenze kommt jetzt von der
+// Quelle, also von SPOTIFY_PLAYLIST_MAX_TRACKS beim Abruf.
 const AUTO_DJ_CONFIG = {
   enabled: false,
   checkInterval: 10000,  // 10 seconds
   cooldownTime: 60000,   // 1 minute between selections
   minQueueLength: 2,     // Start filling when queue has 2 or fewer tracks
-  maxTracksToAdd: 15     // Add up to 15 tracks at once for better coverage
+  // Length of the transition between two titles, 0 switches it off. It applies
+  // to every automatic change, not only to the ones the auto DJ queued - the
+  // field just lives in its section of the admin panel.
+  crossfadeSeconds: 0
 };
+
+// Nur diese beiden sind Einstellungen des Benutzers und gehoeren in den
+// Browser-Speicher. Der Rest oben sind Stellschrauben aus dem Quelltext.
+//
+// Die Trennung ist noetig, weil vorher das ganze AUTO_DJ_CONFIG gespeichert und
+// vollstaendig zurueckgelesen wurde. Eine einmal gespeicherte Stellschraube
+// ueberlebte damit jede Aenderung im Quelltext: der neue Wert stand zwar da,
+// wurde beim Laden aber sofort vom alten aus dem Speicher ueberschrieben - auf
+// jedem Rechner, der die Jukebox schon einmal gestartet hatte. Ein neuer
+// Vorgabewert waere also genau dort wirkungslos geblieben, wo er gebraucht wird.
+const AUTO_DJ_PERSISTED_KEYS = ['enabled', 'crossfadeSeconds'];
+
+// js/crossfade.js reads the fade length from here. A top level const is a
+// binding in the global lexical scope and never a window property, so without
+// this line window.AUTO_DJ_CONFIG stays undefined - the same trap that left
+// window.isAutoDjActive empty for so long.
+window.AUTO_DJ_CONFIG = AUTO_DJ_CONFIG;
+
+const CROSSFADE_MAX_SECONDS = 12;
+
+// Takes the value out of the admin panel field. Anything unusable becomes 0,
+// which is "no transition" and never an accidental fade of some odd length.
+function setCrossfadeSeconds(value) {
+  const parsed = Number.parseFloat(value);
+  const seconds = Number.isFinite(parsed)
+    ? Math.max(0, Math.min(CROSSFADE_MAX_SECONDS, parsed))
+    : 0;
+
+  if (seconds === AUTO_DJ_CONFIG.crossfadeSeconds) return seconds;
+
+  AUTO_DJ_CONFIG.crossfadeSeconds = seconds;
+  saveAutoDjSettings();
+  debugLog('main', `[CROSSFADE] Transition set to ${seconds}s`);
+  return seconds;
+}
+
+function updateCrossfadeInput() {
+  const input = document.getElementById('crossfadeDuration');
+  if (input) {
+    input.value = String(AUTO_DJ_CONFIG.crossfadeSeconds);
+  }
+}
 
 // Auto-DJ and playlist initialization functions moved to js/playlists.js
 
@@ -7083,23 +7253,19 @@ function showPlaylistsSection() {
 // Playlist grid and filtering functions moved to js/playlists.js
 
 // Auto-DJ Helper für Custom Playlists
+//
+// Blaettert ueber alle Seiten. Hier stand limit=50 ohne Nachladen: bei einer
+// Playlist mit 300 Titeln war nach 50 Schluss, ganz gleich wie viele der
+// Auto-DJ danach einreihen wollte. Die Obergrenze ist jetzt die von
+// fetchSpotifyPlaylistTracks(), und die meldet sich im Log, wenn sie greift.
 async function loadSpotifyPlaylistTracks(playlistId) {
   if (!spotifyAccessToken) {
     throw new Error('Spotify-Authentifizierung erforderlich');
   }
-  
+
   try {
-    const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`), {
-      headers: { 'Authorization': `Bearer ${spotifyAccessToken}` }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Spotify API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const tracks = playablePlaylistTracks(data.items);
-    
+    const tracks = await fetchSpotifyPlaylistTracks(playlistId);
+
     // Convert Spotify tracks to the format expected by the system
     return tracks.map(track => ({
       title: track.name,
@@ -7151,8 +7317,10 @@ async function loadCustomPlaylistForAutoDj(playlist, forceReload = false) {
         // Verwende die Spotify Web API direkt
         const tracks = await loadSpotifyPlaylistTracks(playlistId);
         if (tracks && tracks.length > 0) {
+          // Die ganze Playlist, nicht die ersten 15. Was schon in der
+          // Warteschlange steht, laesst addToQueueForAutoDj() ohnehin fallen.
           let addedCount = 0;
-          for (const track of tracks.slice(0, AUTO_DJ_CONFIG.maxTracksToAdd)) {
+          for (const track of tracks) {
             if (await addToQueueForAutoDj(track)) {
               addedCount++;
             }
@@ -7191,8 +7359,8 @@ async function loadCustomPlaylistForAutoDj(playlist, forceReload = false) {
         return 0;
       }
       
-      // Mehr Songs für bessere Abdeckung - doppelte Menge
-      const tracksToAdd = Math.min(AUTO_DJ_CONFIG.maxTracksToAdd * 2, tracks.length);
+      // Die ganze Playlist, gemischt. Vorher waren es hoechstens 30 Titel.
+      const tracksToAdd = tracks.length;
       const shuffledTracks = [...tracks].sort(() => Math.random() - 0.5);
       
       let addedCount = 0;
@@ -7228,8 +7396,9 @@ async function loadCustomPlaylistForAutoDj(playlist, forceReload = false) {
 // Auto-DJ Helper für Auto-learned Playlists
 async function loadAutoLearnedPlaylistForAutoDj(playlist) {
   try {
-    // Immer die komplette Playlist hinzufügen für bessere Abdeckung
-    const tracksToAdd = Math.min(AUTO_DJ_CONFIG.maxTracksToAdd * 2, playlist.tracks.length);
+    // Immer die komplette Playlist hinzufügen für bessere Abdeckung. Was hier
+    // stand, tat das nicht: es waren hoechstens 30 Titel.
+    const tracksToAdd = playlist.tracks.length;
     const shuffledTracks = [...playlist.tracks].sort(() => Math.random() - 0.5);
     
     let addedCount = 0;
@@ -7560,7 +7729,14 @@ function loadAutoDjSettings() {
   try {
     const saved = localStorage.getItem('autoDjSettings');
     if (saved) {
-      Object.assign(AUTO_DJ_CONFIG, JSON.parse(saved));
+      // Gezielt statt Object.assign: alles andere im gespeicherten Stand ist
+      // eine veraltete Stellschraube und wuerde den Quelltext ueberstimmen.
+      const stored = JSON.parse(saved) || {};
+      AUTO_DJ_PERSISTED_KEYS.forEach(key => {
+        if (stored[key] !== undefined) {
+          AUTO_DJ_CONFIG[key] = stored[key];
+        }
+      });
     }
 
     if (localStorage.getItem(AUTO_DJ_DEFAULT_OFF_MARKER) !== 'true') {
@@ -7568,6 +7744,14 @@ function loadAutoDjSettings() {
       localStorage.setItem(AUTO_DJ_DEFAULT_OFF_MARKER, 'true');
       debugLog('main', '[AUTO-DJ] Default applied once: switched off');
     }
+
+    // A stored blob from before the transition existed carries no value for it,
+    // and a hand edited one can carry anything. Both end up at a usable number.
+    const storedCrossfade = Number.parseFloat(AUTO_DJ_CONFIG.crossfadeSeconds);
+    AUTO_DJ_CONFIG.crossfadeSeconds = Number.isFinite(storedCrossfade)
+      ? Math.max(0, Math.min(CROSSFADE_MAX_SECONDS, storedCrossfade))
+      : 0;
+    updateCrossfadeInput();
 
     // Through toggleAutoDj() rather than left to the markup, so the config, the
     // checkbox and window.isAutoDjActive cannot drift apart on a fresh start.
@@ -7579,7 +7763,14 @@ function loadAutoDjSettings() {
 
 function saveAutoDjSettings() {
   try {
-    localStorage.setItem('autoDjSettings', JSON.stringify(AUTO_DJ_CONFIG));
+    // Nur die Einstellungen des Benutzers. Wuerde hier das ganze Objekt landen,
+    // schriebe sich jede Stellschraube aus dem Quelltext in den Speicher und
+    // liesse sich dort nie wieder aendern.
+    const stored = {};
+    AUTO_DJ_PERSISTED_KEYS.forEach(key => {
+      stored[key] = AUTO_DJ_CONFIG[key];
+    });
+    localStorage.setItem('autoDjSettings', JSON.stringify(stored));
   } catch (error) {
     console.error('[AUTO-DJ] Error saving settings:', error);
   }

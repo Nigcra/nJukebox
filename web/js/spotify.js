@@ -12,6 +12,8 @@ let spotifyStatusUpdateInterval = null;
 // Last playing state seen by the progress poll, used to detect the end of a track.
 let spotifyLastPosition = 0;
 let spotifyLastDuration = 0;
+// Fires when the crossfade for the running title has to begin, see armSpotifyFadeTimer().
+let spotifyFadeTimer = null;
 
 // Keeps the module state and the global mirror in sync.
 //
@@ -87,7 +89,9 @@ function initializeSpotifyPlayerInternal() {
       }
       cb(spotifyAccessToken);
     },
-    volume: 0.7
+    // The player is created long after the volume slider has been touched, so
+    // it starts at whatever the rest of the jukebox is already playing at.
+    volume: window.CrossfadeEngine ? window.CrossfadeEngine.getMasterVolume() : 0.7
   });
 
   // The player has to be reachable from outside this module. stopPlayback() and
@@ -100,7 +104,14 @@ function initializeSpotifyPlayerInternal() {
     debugLog('spotify', '[SPOTIFY] Device ready:', device_id);
     spotifyDeviceId = device_id;
     window.spotifyDeviceId = device_id;
-    
+
+    // Only now can the engine reach the player. Pushing the current gain over
+    // makes sure Spotify comes up at the same level as the local decks.
+    if (window.CrossfadeEngine) {
+      window.CrossfadeEngine.reapply();
+    }
+
+
     const status = document.getElementById('spotifyStatus'); 
     if (status) { 
       status.textContent = 'Player ready'; 
@@ -466,14 +477,41 @@ function stopSpotifyStatusUpdates() {
   }
 }
 
+function clearSpotifyFadeTimer() {
+  if (spotifyFadeTimer) {
+    clearTimeout(spotifyFadeTimer);
+    spotifyFadeTimer = null;
+  }
+}
+
+// Arms the moment at which the crossfade for the running title has to begin.
+//
+// The poll below runs once a second, which is too coarse to start a fade on: a
+// fade begun up to a second late loses that second at the end of the title, and
+// for a Spotify to Spotify change that is exactly where the audible gap is. So
+// the poll only re-arms this timer with the position it just read, and the
+// timer itself fires on time.
+function armSpotifyFadeTimer(positionMs, durationMs) {
+  if (!window.CrossfadeEngine) return;
+
+  const lead = window.CrossfadeEngine.spotifyFadeLeadMs(positionMs, durationMs);
+  clearSpotifyFadeTimer();
+  if (lead === null) return;
+
+  spotifyFadeTimer = setTimeout(() => {
+    spotifyFadeTimer = null;
+    window.CrossfadeEngine.crossfadeToNext(durationMs / 1000);
+  }, lead);
+}
+
 // Spotify-specific progress tracking
 function startSpotifyProgressUpdates() {
   stopSpotifyProgressUpdates(); // Clear any existing interval
-  
+
   if (!spotifyPlayer || !spotifyDeviceId) {
     return;
   }
-  
+
   spotifyProgressInterval = setInterval(() => {
     if (spotifyPlayer) {
       spotifyPlayer.getCurrentState().then(state => {
@@ -488,6 +526,17 @@ function startSpotifyProgressUpdates() {
           }
           spotifyLastPosition = state.position;
           spotifyLastDuration = state.duration;
+          armSpotifyFadeTimer(state.position, state.duration);
+          return;
+        }
+
+        // Paused, so nothing is running towards its end any more.
+        clearSpotifyFadeTimer();
+
+        // A crossfade pauses and restarts the player on purpose. The signature
+        // below cannot tell that apart from a title running out and would skip
+        // one, so the transition owns the queue while it lasts.
+        if (window.crossfadeInProgress) {
           return;
         }
 
@@ -511,13 +560,14 @@ function startSpotifyProgressUpdates() {
       });
     }
   }, 1000); // Update every second
-  
+
   debugLog('spotify', '[SPOTIFY] Started progress updates');
 }
 
 function stopSpotifyProgressUpdates() {
   spotifyLastPosition = 0;
   spotifyLastDuration = 0;
+  clearSpotifyFadeTimer();
 
   if (spotifyProgressInterval) {
     clearInterval(spotifyProgressInterval);
@@ -527,7 +577,16 @@ function stopSpotifyProgressUpdates() {
 }
 
 // Spotify-specific volume control
+//
+// Goes through the fade engine rather than straight to setVolume(): what the
+// player gets is the master volume times the fade gain. Writing the raw value
+// here would undo a running fade for as long as the next fade tick takes.
 function setSpotifyVolume(volume) {
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.setMasterVolume(volume);
+    return;
+  }
+
   if (spotifyPlayer && spotifyDeviceId) {
     const volumePercent = Math.max(0, Math.min(100, Math.round(volume * 100)));
     spotifyPlayer.setVolume(volumePercent / 100).then(() => {
@@ -542,11 +601,18 @@ function setSpotifyVolume(volume) {
 
 // Enhanced volume control that works for both local and Spotify
 function setUniversalVolume(volume) {
+  // One master volume covers both outputs. Calling setVolume() and
+  // setSpotifyVolume() in turn would set the same master twice.
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.setMasterVolume(volume);
+    return;
+  }
+
   // Set local audio volume
   if (typeof setVolume !== 'undefined') {
     setVolume(volume);
   }
-  
+
   // Set Spotify volume
   setSpotifyVolume(volume);
 }

@@ -134,6 +134,8 @@
       "autoDjAudio": "🤖 Auto-DJ & Audio Controls",
       "enableAutoDj": "Enable Auto-DJ",
       "autoPlayDescription": "Automatically plays songs when playlist is empty",
+      "crossfadeDuration": "Transition between tracks (seconds)",
+      "crossfadeDescription": "0 = off. Local tracks, and any change between local and Spotify, fade into each other. Two Spotify tracks in a row fade out and back in.",
       "start": "Start",
       "quit": "Quit jukebox",
       "dataServer": "Data Server",

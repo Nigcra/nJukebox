@@ -112,7 +112,11 @@
         <button id="stopButton" class="admin-only" title="Stop">⏹</button>
         <button id="skipControlButton" class="admin-only" title="" data-i18n-title="ui.buttons.skip">⏭</button>
       </div>
-      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" title="" data-i18n-title="ui.labels.volume">
+      <!-- 0.7 and not 1: local tracks were started at 0.7 and the Spotify player
+           was created at 0.7, while this slider showed 1 - it never matched what
+           was actually playing. Both sides read this value now, so it has to be
+           the level that was in effect, otherwise everything gets louder. -->
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.7" title="" data-i18n-title="ui.labels.volume">
     </div>
     <input type="range" id="progressBar" min="0" max="100" step="0.1" value="0" style="display: none;">
     <canvas id="equalizerCanvas" height="60"></canvas>
@@ -240,8 +244,18 @@
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #3a3a3a; padding-top: 8px;">
+                  <div>
+                    <label for="crossfadeDuration" style="font-weight: bold; font-size: 0.9em;" data-i18n="ui.labels.crossfadeDuration">Übergang zwischen Titeln (Sekunden)</label>
+                    <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.labels.crossfadeDescription">
+                      0 = aus. Lokale Titel und der Wechsel zwischen lokal und Spotify blenden ineinander über. Zwei Spotify-Titel nacheinander werden aus- und wieder eingeblendet.
+                    </small>
+                  </div>
+                  <input type="number" id="crossfadeDuration" min="0" max="12" step="0.5" value="0" autocomplete="off" style="width: 70px; flex: 0 0 auto;">
+                </div>
               </div>
-              
+
               <!-- Audio Controls Section -->
               <div style="background: #2a2a2a; padding: 12px; border-radius: 6px;">
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -311,14 +325,14 @@
                 <h4 data-i18n="ui.labels.partyPlaylists">🎉 Party Playlists</h4>
                 <small style="display: block; color: #888; margin: -6px 0 12px 0; font-size: 0.85em;" data-i18n="ui.messages.autoPlaylistDescription">Fügt Titel zur Bibliothek hinzu. Der Auto-DJ bedient sich später aus genau diesen Listen.</small>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                  <button id="learnPartyHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎵 Party Hits</button>
+                  <button id="learnPartyHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎵 Dance Party</button>
                   <button id="learnSchlager" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🍺 Schlager Party</button>
                   <button id="learnDanceHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🕺 Dance Party</button>
                   <button id="learn70s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">💿 70er Party</button>
                   <button id="learn80s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎸 80er Party</button>
                   <button id="learn90s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">📀 90er Party</button>
                   <button id="learn2000s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎧 2000er Party</button>
-                  <button id="learnLounge" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">✨ Summer Lounge Party</button>
+                  <button id="learnLounge" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">✨ Chillout Lounge</button>
                 </div>
                 <button id="learnAllParty" class="auto-learn-btn" style="width: 100%; background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease;" data-i18n="ui.buttons.loadAllPartyPlaylists">🎉 Alle Party-Playlists laden</button>
               </div>
@@ -669,7 +683,10 @@
   </div>
 
   <!-- Auto-Learning Modal -->
+  <!-- Two decks, so a local track can fade into the next one. A single element
+       holds exactly one source; overlapping two of them needs two elements. -->
   <audio id="audioPlayer" crossorigin="anonymous"></audio>
+  <audio id="audioPlayerB" crossorigin="anonymous"></audio>
   
   <!-- Modular JavaScript - Load before Spotify SDK -->
   <script src="js/debug.js"></script>
@@ -681,6 +698,7 @@
   <script src="js/admin_panel.js"></script>
   <script src="js/theming.js"></script>
   <script src="js/spotify.js"></script>
+  <script src="js/crossfade.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/covers.js"></script>
   <script src="js/playlists.js"></script>

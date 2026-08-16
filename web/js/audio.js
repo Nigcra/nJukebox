@@ -3,51 +3,66 @@
 // Version: 2026.08.16
 
 // Audio player variables
+//
+// Local playback runs on two decks. A single <audio> element holds exactly one
+// source, so a title can never fade into the next one on it - the moment src is
+// reassigned the old one is gone. audioPlayer always points at the deck that is
+// the current one; during a fade the other deck still holds the outgoing title.
 let audioPlayer = null;
+let audioDeckA = null;
+let audioDeckB = null;
 let volumeSlider = null;
 let currentTrackDuration = 0;
 let progressUpdateInterval = null;
 
-// Initialize audio player
-function initializeAudioPlayer() {
-  // Try to get the audio player element
-  audioPlayer = document.getElementById('audioPlayer');
-  volumeSlider = document.getElementById('volumeSlider');
-  
-  if (!audioPlayer) {
-    debugLog('AUDIO', 'Audio player element not found, retrying in 100ms...');
-    setTimeout(initializeAudioPlayer, 100);
+function audioDecks() {
+  return [audioDeckA, audioDeckB].filter(Boolean);
+}
+
+// The deck that is free to take the incoming title.
+function idleAudioDeck() {
+  return audioPlayer === audioDeckA ? audioDeckB : audioDeckA;
+}
+
+// Attaches the listeners to one deck. Everything that acts on the queue is
+// guarded by "is this the current deck": during a crossfade both decks are
+// alive, and only one of them may drive the UI and the queue.
+function wireAudioDeck(deck) {
+  if (!deck || deck.dataset.initialized === 'true') {
     return false;
   }
-  
-  // Check if already initialized to avoid duplicate listeners
-  if (audioPlayer.dataset.initialized === 'true') {
-    if (typeof debugLog !== 'undefined') {
-      debugLog('AUDIO', 'Audio player already initialized');
-    }
-    return true;
-  }
-  
-  // Mark as initialized
-  audioPlayer.dataset.initialized = 'true';
-  
-  // Add event listeners for audio player
-  audioPlayer.addEventListener('loadedmetadata', () => {
-    if (audioPlayer.duration && isFinite(audioPlayer.duration)) {
-      setTrackDuration(audioPlayer.duration);
+  deck.dataset.initialized = 'true';
+
+  deck.addEventListener('loadedmetadata', () => {
+    if (deck !== audioPlayer) return;
+    if (deck.duration && isFinite(deck.duration)) {
+      setTrackDuration(deck.duration);
       if (typeof debugLog !== 'undefined') {
-        debugLog('AUDIO', 'Track duration loaded:', formatTime(audioPlayer.duration));
+        debugLog('AUDIO', 'Track duration loaded:', formatTime(deck.duration));
       }
     }
   });
-  
-  audioPlayer.addEventListener('timeupdate', () => {
-    if (!audioPlayer.paused && audioPlayer.duration) {
-      updateProgressDisplay(audioPlayer.currentTime, audioPlayer.duration);
+
+  deck.addEventListener('timeupdate', () => {
+    if (deck !== audioPlayer || deck.paused || !deck.duration) return;
+    updateProgressDisplay(deck.currentTime, deck.duration);
+
+    // The fade has to begin before the file runs out, so the end of the title
+    // is watched here rather than left to "ended" - by the time that fires
+    // there is nothing left to fade out.
+    if (window.CrossfadeEngine) {
+      window.CrossfadeEngine.considerLocalTransition(deck);
     }
   });
-  
-  audioPlayer.addEventListener('ended', () => {
+
+  deck.addEventListener('ended', () => {
+    // A crossfade pauses the outgoing deck before it runs out, but a fade that
+    // started late can still let it end. Only the current deck may advance the
+    // queue; the other one would skip a title.
+    if (deck !== audioPlayer) {
+      debugLog('audio', '[AUDIO] Outgoing deck ended after the fade, ignoring');
+      return;
+    }
     if (typeof debugLog !== 'undefined') {
       debugLog('AUDIO', 'Track ended, advancing to next');
     }
@@ -55,55 +70,89 @@ function initializeAudioPlayer() {
       skipTrack();
     }
   });
-  
-  audioPlayer.addEventListener('error', (e) => {
+
+  deck.addEventListener('error', (e) => {
     // Only log meaningful errors, ignore expected ones like when src is cleared
-    if (audioPlayer.error && audioPlayer.error.code !== 4) { // 4 = MEDIA_ELEMENT_ERROR: Media loading aborted
+    if (deck.error && deck.error.code !== 4) { // 4 = MEDIA_ELEMENT_ERROR: Media loading aborted
       debugLog('AUDIO', 'Audio playback error:', {
-        code: audioPlayer.error?.code,
-        message: audioPlayer.error?.message,
-        networkState: audioPlayer.networkState,
-        readyState: audioPlayer.readyState,
-        src: audioPlayer.src
+        code: deck.error?.code,
+        message: deck.error?.message,
+        networkState: deck.networkState,
+        readyState: deck.readyState,
+        src: deck.src
       });
-      
-      if (typeof toast !== 'undefined' && audioPlayer.src) { // Only show toast if we actually have a source
-        toast.error(`Audio error: ${audioPlayer.error?.message || 'Unknown error'}`);
+
+      if (typeof toast !== 'undefined' && deck.src) { // Only show toast if we actually have a source
+        toast.error(`Audio error: ${deck.error?.message || 'Unknown error'}`);
       }
     }
   });
-  
+
+  return true;
+}
+
+// Initialize audio player
+function initializeAudioPlayer() {
+  // Try to get the audio player elements
+  audioDeckA = document.getElementById('audioPlayer');
+  audioDeckB = document.getElementById('audioPlayerB');
+  volumeSlider = document.getElementById('volumeSlider');
+
+  if (!audioDeckA || !audioDeckB) {
+    debugLog('AUDIO', 'Audio player elements not found, retrying in 100ms...');
+    setTimeout(initializeAudioPlayer, 100);
+    return false;
+  }
+
+  if (!audioPlayer) {
+    audioPlayer = audioDeckA;
+  }
+
+  wireAudioDeck(audioDeckA);
+  wireAudioDeck(audioDeckB);
+
+  // From here on the fade engine owns the volume of both decks. What is set on
+  // an element is always master volume times fade gain - writing element.volume
+  // directly would fight a running fade and win for one tick.
+  if (window.CrossfadeEngine) {
+    audioDecks().forEach(deck => window.CrossfadeEngine.registerDeck(deck));
+    if (volumeSlider) {
+      const sliderVolume = parseFloat(volumeSlider.value);
+      if (isFinite(sliderVolume)) {
+        window.CrossfadeEngine.setMasterVolume(sliderVolume);
+      }
+    }
+  }
+
   // Initialize volume slider event listener
-  if (volumeSlider) {
+  if (volumeSlider && volumeSlider.dataset.initialized !== 'true') {
+    volumeSlider.dataset.initialized = 'true';
     volumeSlider.addEventListener('input', (e) => {
       // Check if admin mode is enabled (from global scope)
       if (typeof isAdminMode !== 'undefined' && !isAdminMode) {
         e.preventDefault();
-        volumeSlider.value = audioPlayer.volume;
+        volumeSlider.value = getVolume();
         if (typeof toast !== 'undefined') {
           toast.error('Nur der Administrator kann die Lautstärke ändern.');
         }
         return;
       }
-      
+
       const volume = parseFloat(e.target.value);
-      
+
       if (typeof debugLog !== 'undefined') {
         debugLog('AUDIO', 'Volume slider changed to:', volume);
       }
-      
+
       // Use universal volume control for both local and Spotify
       if (typeof setUniversalVolume !== 'undefined') {
         setUniversalVolume(volume);
       } else {
-        // Fallback to local audio only
-        if (audioPlayer) {
-          audioPlayer.volume = volume;
-        }
+        setVolume(volume);
       }
     });
   }
-  
+
   if (typeof debugLog !== 'undefined') {
     debugLog('AUDIO', 'Audio player initialized');
   }
@@ -113,20 +162,29 @@ function initializeAudioPlayer() {
 // Central function to stop all playback
 function stopAllPlayback() {
   debugLog('audio', '[STOP] Stopping all playback...');
-  
-  // Stop local audio player
-  if (audioPlayer) {
-    if (!audioPlayer.paused) {
-      audioPlayer.pause();
+
+  // No fade survives a teardown, and every output goes back to full gain -
+  // otherwise a title started right after an interrupted fade stays silent.
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.abort();
+  }
+
+  // Stop both local decks. During a crossfade both of them carry a title, and
+  // stopping only the current one would leave the outgoing one playing.
+  audioDecks().forEach(deck => {
+    if (!deck.paused) {
+      deck.pause();
     }
-    audioPlayer.currentTime = 0;
+    deck.currentTime = 0;
     // Only clear src if it's actually set to avoid unnecessary error events
-    if (audioPlayer.src && !audioPlayer.src.endsWith('about:blank')) {
-      audioPlayer.src = '';
+    if (deck.src && !deck.src.endsWith('about:blank')) {
+      deck.src = '';
     }
+  });
+  if (audioDeckA) {
     debugLog('audio', '[STOP] Local audio player stopped');
   }
-  
+
   // Stop Spotify player
   if (window.spotifyPlayer) {
     window.spotifyPlayer.pause().then(() => {
@@ -164,21 +222,27 @@ function stopAllPlayback() {
 let isCurrentlyPlayingTrack = false; 
 window.isCurrentlyPlayingTrack = false; // Global access for other modules
 
-function playCurrentTrack() {
-  debugLog('audio', `[PLAY] playCurrentTrack called. currentTrackIndex: ${window.currentTrackIndex}, queue length: ${window.queue ? window.queue.length : 0}`);
-  
+function playCurrentTrack(options) {
+  // options.crossfade: the previous title is being faded out right now and has
+  // to keep playing. Set by js/crossfade.js through skipTrack().
+  const crossfade = !!(options && options.crossfade);
+
+  debugLog('audio', `[PLAY] playCurrentTrack called. currentTrackIndex: ${window.currentTrackIndex}, queue length: ${window.queue ? window.queue.length : 0}, crossfade: ${crossfade}`);
+
   // Prevent race condition - if already in process of playing, return
   if (window.isCurrentlyPlayingTrack) {
     debugLog('audio', '[PLAY] Already in process of playing track, ignoring duplicate call');
     return;
   }
-  
-  // Additional protection: Check if we're currently loading/starting playback
-  if (audioPlayer && (audioPlayer.readyState === 1 || audioPlayer.readyState === 2)) {
+
+  // Additional protection: Check if we're currently loading/starting playback.
+  // Not during a crossfade: there the current deck is the outgoing title and is
+  // expected to be busy - the incoming one gets the other deck anyway.
+  if (!crossfade && audioPlayer && (audioPlayer.readyState === 1 || audioPlayer.readyState === 2)) {
     debugLog('audio', '[PLAY] Audio element still loading, ignoring duplicate call');
     return;
   }
-  
+
   window.isCurrentlyPlayingTrack = true;
   
   // Prevent UI flickering during track changes
@@ -199,9 +263,16 @@ function playCurrentTrack() {
     return;
   }
   
-  // Stop all playback first to prevent conflicts
-  stopAllPlayback();
-  
+  // Stop all playback first to prevent conflicts. Not during a crossfade: the
+  // outgoing title is still sounding and the fade engine releases its deck once
+  // the fade is through. Tearing it down here would turn the transition back
+  // into the hard cut it is meant to replace.
+  if (crossfade) {
+    debugLog('audio', '[PLAY] Crossfade running, the previous source stays alive');
+  } else {
+    stopAllPlayback();
+  }
+
   const track = window.queue && window.queue[window.currentTrackIndex];
   if (!track) { 
     debugLog('audio', `[PLAY] No track found at index ${window.currentTrackIndex}`);
@@ -259,9 +330,14 @@ function playCurrentTrack() {
   
   // Play the track based on type
   if (isSpotifyTrack) {
+    // Silent before the play request goes out, otherwise the incoming title
+    // bursts in at full volume for the moment before the fade takes hold.
+    if (crossfade && window.CrossfadeEngine) {
+      window.CrossfadeEngine.setGain('spotify', 0);
+    }
     playSpotifyTrackFromObject(track);
   } else if (isLocalTrack) {
-    playLocalTrack(track);
+    playLocalTrack(track, { crossfade });
   } else {
     debugLog('AUDIO', 'Unknown track type:', track);
   }
@@ -271,7 +347,15 @@ function playCurrentTrack() {
   
   // Start progress updates
   startFooterProgressUpdates();
-  
+
+  // Und die gelegentliche 3D-Drehung des Covers. Sie hing bisher allein an
+  // resumePlayback(), also am Fortsetzen eines schon geladenen Titels - jeder
+  // normale Start laeuft aber hier durch, und damit lief der Timer nie an.
+  if (typeof window.startOccasional3DRotations === 'function') {
+    window.startOccasional3DRotations();
+  }
+
+
   // Update UI layout (switch to now-playing mode if needed)
   if (typeof window.updateUILayout !== 'undefined') {
     window.updateUILayout();
@@ -288,16 +372,22 @@ function playCurrentTrack() {
 }
 
 // Play local (server) track
-function playLocalTrack(track) {
+function playLocalTrack(track, options) {
+  const crossfade = !!(options && options.crossfade);
   debugLog('audio', '[LOCAL] Playing local track:', track.title);
-  
-  if (!audioPlayer) {
+
+  // During a crossfade the outgoing title still holds the current deck, so the
+  // incoming one takes the other. Without a crossfade the current deck is free
+  // and is simply reused.
+  const deck = crossfade ? idleAudioDeck() : audioPlayer;
+
+  if (!deck) {
     debugLog('AUDIO', 'Audio player not initialized');
     return;
   }
-  
+
   const streamUrl = track.streamUrl || (window.musicAPI ? window.musicAPI.getStreamURL(track.id) : null);
-  
+
   if (!streamUrl) {
     debugLog('AUDIO', 'No stream URL available for track:', track);
     if (typeof toast !== 'undefined') {
@@ -305,15 +395,24 @@ function playLocalTrack(track) {
     }
     return;
   }
-  
+
   debugLog('audio', '[LOCAL] Stream URL:', streamUrl);
-  
+
   // Set up audio player
-  audioPlayer.src = streamUrl;
-  audioPlayer.volume = 0.7; // Default volume
-  
+  deck.src = streamUrl;
+  if (window.CrossfadeEngine) {
+    // Silent when it is faded in, at the current volume otherwise.
+    window.CrossfadeEngine.setGain(deck, crossfade ? 0 : 1);
+  } else {
+    deck.volume = 0.7; // Default volume
+  }
+
+  // Has to happen before play(): the listeners on both decks check against this
+  // to decide which one drives the progress display and the queue.
+  audioPlayer = deck;
+
   // Play with error handling
-  audioPlayer.play().then(() => {
+  deck.play().then(() => {
     debugLog('audio', '[LOCAL] Track started successfully');
     if (typeof debugLog !== 'undefined') {
       debugLog('AUDIO', 'Local track playing:', track.title);
@@ -496,26 +595,41 @@ function updateFooterProgress() {
 }
 
 // Volume control functions
+//
+// The slider sets the master volume, never an element volume. What lands on a
+// deck is master times fade gain, so a fade running at that moment keeps its
+// shape and simply plays out at the new level.
 function setVolume(volume) {
-  if (audioPlayer) {
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.setMasterVolume(volume);
+  } else if (audioPlayer) {
     audioPlayer.volume = Math.max(0, Math.min(1, volume));
-    if (typeof debugLog !== 'undefined') {
-      debugLog('AUDIO', 'Volume set to:', audioPlayer.volume);
-    }
+  }
+  if (typeof debugLog !== 'undefined') {
+    debugLog('AUDIO', 'Volume set to:', getVolume());
   }
 }
 
 function getVolume() {
+  if (window.CrossfadeEngine) {
+    return window.CrossfadeEngine.getMasterVolume();
+  }
   return audioPlayer ? audioPlayer.volume : 0.7;
 }
 
 // Audio playback control
 function pauseCurrentTrack() {
-  if (audioPlayer && !audioPlayer.paused) {
-    audioPlayer.pause();
-    debugLog('audio', '[AUDIO] Local track paused');
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.abort();
   }
-  
+
+  audioDecks().forEach(deck => {
+    if (!deck.paused) {
+      deck.pause();
+      debugLog('audio', '[AUDIO] Local track paused');
+    }
+  });
+
   if (window.spotifyPlayer) {
     window.spotifyPlayer.pause().then(() => {
       debugLog('audio', '[AUDIO] Spotify track paused');
@@ -744,6 +858,11 @@ async function pausePlayback() {
     return;
   }
   
+  // A fade must not keep writing volumes into a player that is about to stop.
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.abort();
+  }
+
   const currentTrack = window.queue[window.currentTrackIndex];
   if (currentTrack && currentTrack.type === 'spotify' && window.spotifyPlayer) {
     try {
@@ -756,11 +875,18 @@ async function pausePlayback() {
       // Set status to false even on error
       window.isSpotifyCurrentlyPlaying = false;
     }
-  } else if (audioPlayer && !audioPlayer.paused) {
-    audioPlayer.pause();
-    debugLog('audio', '[PAUSE] Local track paused');
   }
-  
+
+  // Always both decks, and regardless of the type of the current track: a pause
+  // pressed during a crossfade from local to Spotify leaves a local deck
+  // running that the branch above never looks at.
+  audioDecks().forEach(deck => {
+    if (!deck.paused) {
+      deck.pause();
+      debugLog('audio', '[PAUSE] Local track paused');
+    }
+  });
+
   // Pause 3D rotations during pause
   if (typeof window.stop3DRotations === 'function') {
     window.stop3DRotations();
@@ -788,6 +914,12 @@ async function stopPlayback() {
     debugLog('audio', '[STOP] User manually stopped music - Auto-DJ will pause');
   }
   
+  // Kill any running fade first, so nothing keeps turning a volume back up
+  // behind the stop.
+  if (window.CrossfadeEngine) {
+    window.CrossfadeEngine.abort();
+  }
+
   const currentTrack = window.queue && window.queue[window.currentTrackIndex];
   if (currentTrack && currentTrack.type === 'spotify' && window.spotifyPlayer) {
     try {
@@ -798,12 +930,16 @@ async function stopPlayback() {
       debugLog('audio', '[STOP] Spotify stop error:', error);
       window.isSpotifyCurrentlyPlaying = false;
     }
-  } else if (audioPlayer) {
-    audioPlayer.pause();
-    audioPlayer.currentTime = 0;
-    debugLog('audio', '[STOP] Local track stopped');
   }
-  
+
+  // Always both decks, whatever the current track is: a stop pressed during a
+  // crossfade from local to Spotify has a local deck to silence as well.
+  audioDecks().forEach(deck => {
+    deck.pause();
+    deck.currentTime = 0;
+  });
+  debugLog('audio', '[STOP] Local track stopped');
+
   // Don't reset currentTrackIndex to -1 when stopping - keep the track position
   // This allows the now-playing panel to remain visible with the stopped track
   
@@ -884,6 +1020,10 @@ if (typeof window !== 'undefined') {
     get: () => audioPlayer,
     set: (value) => { audioPlayer = value; }
   });
+  // js/crossfade.js needs to know which deck holds the outgoing title before
+  // the queue advances, and which one holds the incoming one afterwards.
+  window.getActiveAudioDeck = () => audioPlayer;
+  window.getAudioDecks = () => audioDecks();
   Object.defineProperty(window, 'currentTrackDuration', {
     get: () => currentTrackDuration,
     set: (value) => { currentTrackDuration = value; }

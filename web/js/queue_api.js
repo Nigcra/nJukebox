@@ -282,8 +282,36 @@ function isTrackInQueue(track) {
   return result;
 }
 
+// Zaehlt ein Eintrag als Wunsch eines Gastes?
+//
+// Nur was ausdruecklich so markiert ist. Alles andere - vom Auto-DJ
+// nachgefuellt, aus einer geladenen Playlist, oder aus einem Zustand, der vor
+// dieser Unterscheidung gespeichert wurde - ist Fuellmaterial und gibt seinen
+// Platz frei.
+const isUserRequest = (track) => !!(track && track.userRequest);
+
+// Wohin ein Wunsch in die Warteschlange gehoert.
+//
+// Direkt hinter den laufenden Titel, aber hinter die Wuensche, die dort schon
+// stehen. Bloss "hinter den laufenden Titel" waere falsch herum: jeder neue
+// Wunsch schoebe sich vor den vorigen, wer zuerst drueckt kaeme zuletzt dran.
+// Die Wuensche bilden also einen Block in der Reihenfolge ihres Eingangs, und
+// was der Auto-DJ nachgeschoben hat, rutscht dahinter.
+function userRequestInsertIndex() {
+  const queue = window.queue || [];
+  let index = (typeof window.currentTrackIndex === 'number' && window.currentTrackIndex >= 0)
+    ? window.currentTrackIndex + 1
+    : 0;
+
+  while (index < queue.length && isUserRequest(queue[index])) {
+    index++;
+  }
+
+  return index;
+}
+
 // Add track to queue with validation and lock time checking
-function addToQueue(track) { 
+function addToQueue(track) {
   debugLog('QUEUE', `Adding track to queue:`, track);
   
   if (typeof window.isAddingToQueue !== 'undefined') {
@@ -369,17 +397,24 @@ function addToQueue(track) {
     window.queue = [];
   }
   
-  window.queue.push(track); 
-  
+  // Als Wunsch markieren, bevor er eingereiht wird: der naechste Wunsch reiht
+  // sich daran an, statt sich davor zu draengen.
+  track.userRequest = true;
+
+  // Nicht ans Ende, sondern vor das Fuellmaterial des Auto-DJ. Sonst wartet ein
+  // Gast auf die 15 Titel, die der Auto-DJ vorsorglich nachgeladen hat.
+  const insertAt = userRequestInsertIndex();
+  window.queue.splice(insertAt, 0, track);
+
   if (typeof window.debouncedUpdateQueueDisplay === 'function') {
-    window.debouncedUpdateQueueDisplay(); 
+    window.debouncedUpdateQueueDisplay();
   }
-  
+
   if (typeof window.saveAppState === 'function') {
     window.saveAppState(); // Save state after queue change
   }
-  
-  debugLog('queue', `[QUEUE] Track added to queue. Current queue length: ${window.queue.length}`);
+
+  debugLog('queue', `[QUEUE] Track added at position ${insertAt}. Current queue length: ${window.queue.length}`);
   debugLog('queue', `[QUEUE] Current track index: ${window.currentTrackIndex}`);
   
   // Show success message
@@ -397,9 +432,9 @@ function addToQueue(track) {
       debugLog('queue', `[QUEUE] Playback already starting, skipping duplicate call`);
     }
   } else {
-    debugLog('queue', `[QUEUE] Queue has tracks, added to end`);
+    debugLog('queue', `[QUEUE] Queue has tracks, request queued at ${insertAt} of ${window.queue.length}`);
   }
-  
+
   if (typeof window.isAddingToQueue !== 'undefined') {
     window.isAddingToQueue = false; // Clear flag
   }
@@ -502,6 +537,10 @@ function insertNext(track) {
     window.queue = [];
   }
 
+  // Auch das ist ein Wunsch, kein Fuellmaterial - sonst schoebe der naechste
+  // Gastwunsch sich davor.
+  track.userRequest = true;
+
   if (window.currentTrackIndex === -1) {
     window.queue.push(track);
     window.currentTrackIndex = 0;
@@ -509,6 +548,9 @@ function insertNext(track) {
       window.playCurrentTrack();
     }
   } else {
+    // Hier bewusst unmittelbar hinter den laufenden Titel und damit auch vor
+    // schon wartende Wuensche: dieser Knopf heisst "als naechstes" und meint
+    // das woertlich. addToQueue() reiht dagegen hinten am Wunschblock an.
     window.queue.splice(window.currentTrackIndex + 1, 0, track);
     if (typeof window.debouncedUpdateQueueDisplay === 'function') {
       window.debouncedUpdateQueueDisplay();

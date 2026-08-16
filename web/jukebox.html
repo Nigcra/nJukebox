@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -173,8 +173,8 @@
               <h4 data-i18n="ui.labels.language">🌐 Sprache</h4>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <select id="languageSelect" style="padding: 6px 12px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 0.9em; width: 120px;">
-                  <option value="de">🇩🇪 Deutsch</option>
                   <option value="en">🇺🇸 English</option>
+                  <option value="de">🇩🇪 Deutsch</option>
                 </select>
               </div>
             </div>
@@ -196,7 +196,7 @@
                 <!-- PIN Settings -->
                 <div style="flex: 1;">
                   <label for="adminPinSetting" data-i18n="ui.labels.adminPin">Admin-PIN:</label>
-                  <input type="password" id="adminPinSetting" autocomplete="off" placeholder="4-stellige PIN">
+                  <input type="password" id="adminPinSetting" autocomplete="off" placeholder="4-digit PIN" data-i18n-placeholder="ui.labels.adminPinPlaceholder">
                   <small style="display: block; color: #666; margin-top: 4px; font-size: 0.85em;" data-i18n="ui.labels.adminPinDescription">
                     4-stellige PIN für Admin-Zugang (Standard: 1234)
                   </small>

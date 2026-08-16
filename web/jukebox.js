@@ -587,7 +587,14 @@ async function initializeApp() {
   if (window.adminPanel && window.adminPanel.initializeDOM) {
     window.adminPanel.initializeDOM();
   }
-  
+
+  // Nothing configured yet? Then the settings dialog opens by itself, so a
+  // fresh install lands on language, PIN and Spotify instead of an empty grid.
+  // Deliberately after initializeDOM(): the dialog needs those references.
+  if (window.adminPanel && window.adminPanel.openSetupDialogIfFirstRun) {
+    window.adminPanel.openSetupDialogIfFirstRun();
+  }
+
   debugLog('SYSTEM', '=== DOMContentLoaded abgeschlossen ===');
   
   // Audio Test Button
@@ -2048,7 +2055,9 @@ async function renderRecentAlbums() {
     
     if (limitedAlbums.length === 0) {
       const noResultsDiv = document.createElement('div');
-      noResultsDiv.textContent = 'Keine neuen Alben gefunden';
+      noResultsDiv.textContent = (window.i18n && window.i18n.t)
+        ? window.i18n.t('ui.messages.noAlbumsFound', 'No albums found')
+        : 'No albums found';
       noResultsDiv.style.padding = '2rem';
       noResultsDiv.style.textAlign = 'center';
       noResultsDiv.style.color = '#999';
@@ -2249,7 +2258,9 @@ async function renderRecentAlbums() {
 
     if (sortedArtists.length === 0) {
       const noArtistsDiv = document.createElement('div');
-      noArtistsDiv.textContent = 'Keine neuen Interpreten gefunden';
+      noArtistsDiv.textContent = (window.i18n && window.i18n.t)
+        ? window.i18n.t('ui.messages.noArtistsFound', 'No artists found')
+        : 'No artists found';
       noArtistsDiv.style.padding = '2rem';
       noArtistsDiv.style.textAlign = 'center';
       noArtistsDiv.style.color = '#999';
@@ -7537,19 +7548,30 @@ async function addAutoDjTracks() {
 }
 
 // Load/Save Auto-DJ settings
+//
+// The Auto-DJ is off unless it was switched on deliberately. Installs that ran
+// with it enabled carry that in localStorage, and a stored "on" would outlive
+// the changed default forever - the browser remembers it, no reinstall clears
+// it. So the first load after this change forces it off once, guarded by the
+// marker below; anything the user switches on afterwards is left alone.
+const AUTO_DJ_DEFAULT_OFF_MARKER = 'autoDjDefaultOffApplied';
+
 function loadAutoDjSettings() {
   try {
     const saved = localStorage.getItem('autoDjSettings');
     if (saved) {
-      const settings = JSON.parse(saved);
-      Object.assign(AUTO_DJ_CONFIG, settings);
-      
-      const toggle = document.getElementById('autoDjToggle');
-      if (toggle) {
-        toggle.checked = AUTO_DJ_CONFIG.enabled;
-        toggleAutoDj(AUTO_DJ_CONFIG.enabled);
-      }
+      Object.assign(AUTO_DJ_CONFIG, JSON.parse(saved));
     }
+
+    if (localStorage.getItem(AUTO_DJ_DEFAULT_OFF_MARKER) !== 'true') {
+      AUTO_DJ_CONFIG.enabled = false;
+      localStorage.setItem(AUTO_DJ_DEFAULT_OFF_MARKER, 'true');
+      debugLog('main', '[AUTO-DJ] Default applied once: switched off');
+    }
+
+    // Through toggleAutoDj() rather than left to the markup, so the config, the
+    // checkbox and window.isAutoDjActive cannot drift apart on a fresh start.
+    toggleAutoDj(AUTO_DJ_CONFIG.enabled);
   } catch (error) {
     console.error('[AUTO-DJ] Error loading settings:', error);
   }

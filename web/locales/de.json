@@ -172,6 +172,7 @@
       "eventOrganizerPlaceholder": "Name des Veranstalters",
       "eventLocationPlaceholder": "Veranstaltungsort",
       "eventAttendeesPlaceholder": "z.B. 150",
+      "adminPinPlaceholder": "4-stellige PIN",
       "startDate": "Von Datum",
       "endDate": "Bis Datum",
       "eventManagement": "🗂️ Veranstaltungen verwalten",

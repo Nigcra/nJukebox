@@ -5,7 +5,7 @@
 
 class I18nSystem {
   constructor() {
-    this.currentLanguage = 'de'; // Default language
+    this.currentLanguage = 'en'; // Default language when nothing is configured
     this.translations = {};
     this.supportedLanguages = ['de', 'en'];
     this.fallbackLanguage = 'en';
@@ -273,7 +273,7 @@ window.i18nSystem = window.i18n; // Legacy alias for compatibility
 
 // Initialize immediately with saved language preference
 const savedLanguage = window.i18n.loadLanguagePreference();
-const initialLanguage = savedLanguage || 'de';
+const initialLanguage = savedLanguage || 'en';
 
 // Load the initial language synchronously if possible
 window.i18n.currentLanguage = initialLanguage;

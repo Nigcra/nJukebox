@@ -854,7 +854,9 @@ class AdminSettingsManager {
     // Admin PIN (don't pre-fill for security)
     const adminPinInput = document.getElementById('adminPinSetting');
     if (adminPinInput) {
-      adminPinInput.placeholder = '4-stellige PIN (aktuell gesetzt)';
+      adminPinInput.placeholder = (window.i18n && window.i18n.t)
+        ? window.i18n.t('ui.labels.adminPinPlaceholder', '4-digit PIN')
+        : '4-digit PIN';
     }
   }
 
@@ -1680,11 +1682,11 @@ function hideAdminOverlay() {
   const adminControls = document.getElementById('adminControls');
   const pinInput = document.getElementById('adminPin');
   const pinErrorMessage = document.getElementById('pinErrorMessage');
-  
+
   // Hide overlay
   adminOverlay.classList.add('hidden');
   adminOverlay.classList.remove('pin-mode');
-  
+
   // Reset PIN panel state
   pinPanel.classList.remove('hidden', 'error');
   adminControls.classList.add('hidden');
@@ -1693,8 +1695,87 @@ function hideAdminOverlay() {
   if (pinErrorMessage) {
     pinErrorMessage.classList.remove('show');
   }
-  
+
+  // The setup prompt has served its purpose once it is closed.
+  if (setupDialogOpen) {
+    setupDialogOpen = false;
+    markSetupCompleted();
+  }
+
   debugLog('admin', '[DEBUG] Admin-Overlay geschlossen');
+}
+
+// =============================================================================
+// FIRST RUN SETUP
+// =============================================================================
+
+// A fresh install has nothing configured, so the settings dialog opens on its
+// own the first time the interface is loaded. The flag is written when that
+// dialog is closed, not when it opens: a reload that never got as far as the
+// dialog should still see the prompt.
+const SETUP_COMPLETED_KEY = 'jukebox_setup_completed';
+let setupDialogOpen = false;
+
+async function isSetupCompleted() {
+  // localStorage first: it answers without a round trip and keeps the prompt
+  // away even when the data server is unreachable.
+  if (localStorage.getItem(SETUP_COMPLETED_KEY) === 'true') {
+    return true;
+  }
+
+  if (window.settingsAPI) {
+    try {
+      const stored = await window.settingsAPI.getSetting('admin', 'setupCompleted', false);
+      return stored === true || stored === 'true';
+    } catch (error) {
+      debugLog('ADMIN', 'Setup flag lookup failed:', error);
+    }
+  }
+
+  return false;
+}
+
+async function markSetupCompleted() {
+  localStorage.setItem(SETUP_COMPLETED_KEY, 'true');
+
+  if (window.settingsAPI) {
+    try {
+      await window.settingsAPI.setSetting('admin', 'setupCompleted', true, 'boolean',
+        'Set once the first run settings dialog has been dismissed');
+    } catch (error) {
+      debugLog('ADMIN', 'Setup flag could not be stored:', error);
+    }
+  }
+
+  debugLog('admin', '[SETUP] Marked as completed');
+}
+
+// Opens the settings dialog on a fresh install. The PIN panel is skipped:
+// nothing is configured yet, so there is nothing to protect, and asking for the
+// default PIN before the user has ever seen it only gets in the way. Admin mode
+// itself is not granted - the settings inputs work without it, the player
+// controls stay locked.
+async function openSetupDialogIfFirstRun() {
+  if (await isSetupCompleted()) {
+    return false;
+  }
+
+  const overlay = document.getElementById('adminOverlay');
+  const pinPnl = document.getElementById('pinPanel');
+  const adminCtrls = document.getElementById('adminControls');
+
+  if (!overlay || !pinPnl || !adminCtrls) {
+    debugLog('ADMIN', 'First run: admin elements missing, setup dialog skipped');
+    return false;
+  }
+
+  overlay.classList.remove('hidden', 'pin-mode');
+  pinPnl.classList.add('hidden');
+  adminCtrls.classList.remove('hidden');
+  setupDialogOpen = true;
+
+  debugLog('admin', '[SETUP] First run detected - settings dialog opened');
+  return true;
 }
 
 // Helper function for admin settings (Settings API based)
@@ -1704,7 +1785,7 @@ async function getAdminSettings() {
       const adminPin = await window.settingsAPI.getSetting('admin', 'adminPin', '1234');
       const trackLockTimeMinutes = await window.settingsAPI.getSetting('admin', 'trackLockTimeMinutes', 60);
       const debuggingEnabled = await window.settingsAPI.getSetting('admin', 'debuggingEnabled', false);
-      const language = await window.settingsAPI.getSetting('admin', 'language', 'de');
+      const language = await window.settingsAPI.getSetting('admin', 'language', 'en');
       
       return {
         adminPin,
@@ -1718,7 +1799,7 @@ async function getAdminSettings() {
         adminPin: '1234',
         trackLockTimeMinutes: 60,
         debuggingEnabled: false,
-        language: 'de'
+        language: 'en'
       };
     }
   } catch (error) {
@@ -1727,7 +1808,7 @@ async function getAdminSettings() {
       adminPin: '1234',
       trackLockTimeMinutes: 60,
       debuggingEnabled: false,
-      language: 'de'
+      language: 'en'
     };
   }
 }
@@ -1747,6 +1828,7 @@ window.adminPanel = {
   updateControlsState,
   hideAdminOverlay,
   getAdminSettings,
+  openSetupDialogIfFirstRun,
   // Expose settings manager for access - use global instance
   get settingsManager() { return window.adminSettingsManager; },
   saveAdminSettings: AdminSettingsManager.prototype.saveAdminSettings,

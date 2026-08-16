@@ -5720,7 +5720,6 @@ const PARTY_PLAYLISTS = [
   // Flo Rida, Ava Max.
   { button: 'learnPartyHits', id: 'party_hits',     name: 'Dance Party',         filters: { genre: 'dance pop' } },
   { button: 'learnSchlager',  id: 'party_schlager', name: 'Schlager Party',      filters: { genre: 'schlager' } },
-  { button: 'learnDanceHits', id: 'party_dance',    name: 'Dance Party',         filters: { genre: 'dance' } },
   { button: 'learn70s',       id: 'party_70s',      name: '70er Party',          filters: { year: '1970-1979', genre: 'soul' } },
   { button: 'learn80s',       id: 'party_80s',      name: '80er Party',          filters: { year: '1980-1989', genre: 'pop' } },
   { button: 'learn90s',       id: 'party_90s',      name: '90er Party',          filters: { year: '1990-1999', genre: 'dance' } },

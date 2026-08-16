@@ -327,7 +327,6 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                   <button id="learnPartyHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎵 Dance Party</button>
                   <button id="learnSchlager" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🍺 Schlager Party</button>
-                  <button id="learnDanceHits" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🕺 Dance Party</button>
                   <button id="learn70s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">💿 70er Party</button>
                   <button id="learn80s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">🎸 80er Party</button>
                   <button id="learn90s" class="auto-learn-btn" style="background: var(--hover-background); border: 1px solid var(--border-success); color: var(--primary-color); padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; font-size: 0.85em;">📀 90er Party</button>
@@ -447,48 +446,43 @@
             <!-- Visualization Settings -->
             <div class="admin-section" style="margin-top: 20px;">
               <h4 style="color: var(--primary-color); margin-bottom: 8px;" data-i18n="ui.labels.visualizations">🎬 Visualisierungen</h4>
-              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 15px;">
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
-                  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px;">
-                    <span style="font-size: 28px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">⭐</span>
-                    <span style="font-weight: 500; font-size: 0.8rem;">Space</span>
-                  </div>
-                  <label class="toggle-switch" style="transform: scale(0.8);">
+              <!-- Eine flache Zeile statt Kacheln: die alte Rasterform mit 28px-Symbol,
+                   Beschriftung darunter und Schalter darunter brauchte deutlich mehr
+                   Hoehe als der Rest des Panels. auto-fit legt die Eintraege
+                   nebeneinander, solange die Breite reicht, und bricht sonst um. -->
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                  <span style="font-size: 18px; line-height: 1; flex-shrink: 0;">⭐</span>
+                  <span style="font-weight: 500; font-size: 0.85rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Space</span>
+                  <label class="toggle-switch" style="transform: scale(0.78); flex-shrink: 0; margin: -2px -5px;">
                     <input type="checkbox" id="enableSpaceViz" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
-                  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px;">
-                    <span style="font-size: 28px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🔥</span>
-                    <span style="font-weight: 500; font-size: 0.8rem;">Fire</span>
-                  </div>
-                  <label class="toggle-switch" style="transform: scale(0.8);">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                  <span style="font-size: 18px; line-height: 1; flex-shrink: 0;">🔥</span>
+                  <span style="font-weight: 500; font-size: 0.85rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fire</span>
+                  <label class="toggle-switch" style="transform: scale(0.78); flex-shrink: 0; margin: -2px -5px;">
                     <input type="checkbox" id="enableFireViz" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
-                  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px;">
-                    <span style="font-size: 28px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">✨</span>
-                    <span style="font-weight: 500; font-size: 0.8rem;">Particles</span>
-                  </div>
-                  <label class="toggle-switch" style="transform: scale(0.8);">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                  <span style="font-size: 18px; line-height: 1; flex-shrink: 0;">✨</span>
+                  <span style="font-weight: 500; font-size: 0.85rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Particles</span>
+                  <label class="toggle-switch" style="transform: scale(0.78); flex-shrink: 0; margin: -2px -5px;">
                     <input type="checkbox" id="enableParticlesViz" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 6px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
-                  <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px;">
-                    <span style="font-size: 28px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">🔵</span>
-                    <span style="font-weight: 500; font-size: 0.8rem;">Circles</span>
-                  </div>
-                  <label class="toggle-switch" style="transform: scale(0.8);">
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                  <span style="font-size: 18px; line-height: 1; flex-shrink: 0;">🔵</span>
+                  <span style="font-weight: 500; font-size: 0.85rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Circles</span>
+                  <label class="toggle-switch" style="transform: scale(0.78); flex-shrink: 0; margin: -2px -5px;">
                     <input type="checkbox" id="enableCirclesViz" checked>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
-
               </div>
               <div style="display: flex; align-items: center; gap: 10px;">
                 <label for="visualizationSwitchInterval" style="color: #ccc;" data-i18n="ui.labels.switchInterval">Wechsel-Intervall:</label>

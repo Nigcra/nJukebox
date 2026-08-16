@@ -7,7 +7,7 @@ REM dev.cmd
 REM Development start: windowed browser with DevTools open, verbose server log
 REM Version: 2026.08.13
 REM
-REM Differences to start_jukebox.bat:
+REM Differences to start_jukebox.cmd:
 REM   - no kiosk mode, a normal resizable window
 REM   - DevTools open right away, so the console is visible from the first paint
 REM   - a separate browser profile, which keeps the kiosk session untouched and
@@ -74,7 +74,10 @@ if errorlevel 1 (
 )
 
 echo Starting server...
-start /B "" .\%BINARY%
+REM --no-tui on purpose: the server shares this console with the script, which
+REM keeps printing below. A TUI would take over the alt screen and the two would
+REM overwrite each other. Run the binary on its own to get the interface.
+start /B "" .\%BINARY% --no-tui
 
 echo Waiting for the server to answer...
 set READY=0

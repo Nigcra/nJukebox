@@ -1,6 +1,6 @@
 // main.go
 // Entry point: starts the web and data listeners of nJukebox
-// Version: 2026.08.14
+// Version: 2026.08.16
 
 package main
 
@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/Nigcra/nJukebox/internal/api"
 	"github.com/Nigcra/nJukebox/internal/appdb"
@@ -21,6 +23,7 @@ import (
 	"github.com/Nigcra/nJukebox/internal/musicdb"
 	"github.com/Nigcra/nJukebox/internal/scanner"
 	"github.com/Nigcra/nJukebox/internal/spotify"
+	"github.com/Nigcra/nJukebox/internal/tui"
 	"github.com/Nigcra/nJukebox/internal/web"
 )
 
@@ -29,6 +32,7 @@ func main() {
 		root     = flag.String("root", "", "project directory holding the frontend files, config.json, data/ and music/ (default: working directory)")
 		webOnly  = flag.Bool("web-only", false, "start only the web server")
 		dataOnly = flag.Bool("data-only", false, "start only the data server")
+		noTUI    = flag.Bool("no-tui", false, "start without the terminal interface, logging to stdout instead")
 	)
 	flag.Parse()
 
@@ -45,6 +49,17 @@ func main() {
 	}
 	*root = normalizeRoot(*root)
 
+	// The TUI owns the screen, so the log has to go somewhere else - a stray
+	// log line would tear a hole into the alt screen. Redirected output (a log
+	// file, a pipe, a service manager) gets the plain logger either way.
+	useTUI := !*noTUI && isTerminal(os.Stdout)
+	var sink *tui.LogSink
+	if useTUI {
+		sink = tui.NewLogSink(512)
+		log.SetOutput(sink)
+		log.SetFlags(0) // the TUI stamps its own time
+	}
+
 	cfg, loaded, err := config.Load(*root)
 	if err != nil {
 		log.Printf("failed to load config.json, using defaults: %v", err)
@@ -58,19 +73,19 @@ func main() {
 		log.Print(note)
 	}
 
-	errs := make(chan error, 2)
+	rt := &serverRuntime{root: *root, errs: make(chan error, 2)}
 
 	if !*webOnly {
-		dataServer, cleanup, err := buildDataServer(*root)
+		data, err := rt.startData(*root)
 		if err != nil {
-			log.Fatalf("data server: %v", err)
+			fatal(useTUI, "data server: %v", err)
 		}
-		defer cleanup()
+		defer data.cleanup()
 
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, dataPort)
-		log.Printf("Data server listening on http://%s", addr)
+		rt.dataAddr = fmt.Sprintf("%s:%d", cfg.Server.Host, dataPort)
+		log.Printf("Data server listening on http://%s", rt.dataAddr)
 		go func() {
-			errs <- http.ListenAndServe(addr, dataServer)
+			rt.errs <- http.ListenAndServe(rt.dataAddr, data.handler)
 		}()
 	}
 
@@ -81,19 +96,74 @@ func main() {
 		// simply not below it. That is what the Node server got wrong (S2).
 		server, err := web.New(filepath.Join(*root, "web"), cfg.Server.Host, webPort)
 		if err != nil {
-			log.Fatalf("web server: %v", err)
+			fatal(useTUI, "web server: %v", err)
 		}
+		rt.webAddr = fmt.Sprintf("%s:%d", cfg.Server.Host, webPort)
+		rt.webURL = fmt.Sprintf("http://%s:%d/", cfg.Server.Host, webPort)
+		// No log line here: ListenAndServe announces itself, and saying it twice
+		// only makes the event log look like something happened twice.
 		go func() {
-			errs <- server.ListenAndServe()
+			rt.errs <- server.ListenAndServe()
 		}()
 	}
 
-	log.Fatalf("server stopped: %v", <-errs)
+	if !useTUI {
+		log.Fatalf("server stopped: %v", <-rt.errs)
+	}
+
+	// A listener that dies takes the whole server with it, but under the TUI it
+	// must not call log.Fatal: that would leave the terminal in the alt screen
+	// with no way back. Report it and let the user quit.
+	go func() {
+		if err := <-rt.errs; err != nil {
+			log.Printf("server stopped: %v", err)
+			rt.setFatal(err)
+		}
+	}()
+
+	model := tui.New(tui.Config{
+		WebURL:   rt.webURL,
+		WebAddr:  rt.webAddr,
+		DataAddr: rt.dataAddr,
+		Root:     rt.root,
+		Stats:    rt.snapshot,
+		Rescan:   rt.rescan,
+		Events:   sink.Events(),
+	})
+	if err := model.Run(); err != nil {
+		log.SetOutput(os.Stderr)
+		fmt.Fprintln(os.Stderr, "TUI error:", err)
+	}
 }
 
-// buildDataServer opens both databases, starts scanner and token manager and
-// wires up the API.
-func buildDataServer(root string) (http.Handler, func(), error) {
+// serverRuntime holds what the TUI needs to read out of the running server.
+type serverRuntime struct {
+	root     string
+	webAddr  string
+	dataAddr string
+	webURL   string
+	errs     chan error
+
+	music   *musicdb.DB
+	app     *appdb.DB
+	scanner *scanner.Scanner
+	spotify *spotify.Manager
+	runScan func()
+
+	mu       sync.Mutex
+	lastScan string
+	fatalErr error
+}
+
+// dataServer bundles the API handler with the shutdown of everything it owns.
+type dataServer struct {
+	handler http.Handler
+	cleanup func()
+}
+
+// startData opens both databases, starts scanner and token manager, wires up
+// the API and keeps the handles the TUI reads from.
+func (r *serverRuntime) startData(root string) (*dataServer, error) {
 	// initializeServer() created both directories before touching anything else.
 	// Without music/ the scanner cannot even list the library.
 	for _, dir := range []string{
@@ -101,19 +171,19 @@ func buildDataServer(root string) (http.Handler, func(), error) {
 		filepath.Join(root, "data", "converted"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, nil, fmt.Errorf("create %s: %w", dir, err)
+			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
 
 	music, err := musicdb.Open(filepath.Join(root, "data", "music.db"))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	app, err := appdb.Open(filepath.Join(root, "data", "app.db"))
 	if err != nil {
 		music.Close()
-		return nil, nil, err
+		return nil, err
 	}
 
 	// The debug flag comes from the settings table, defaulting to true like the
@@ -149,18 +219,36 @@ func buildDataServer(root string) (http.Handler, func(), error) {
 	if err := sc.Watch(scanCtx); err != nil {
 		log.Printf("[SCANNER] could not watch %s: %v", musicDir, err)
 	}
-	server.RegisterRescan(func(ctx context.Context) error {
-		_, err := sc.ScanAll(ctx)
-		return err
-	})
+
+	r.music, r.app, r.scanner, r.spotify = music, app, sc, manager
+
+	// One scan path for the API and the TUI, so both record the same summary.
+	scan := func(ctx context.Context) error {
+		result, err := sc.ScanAll(ctx)
+		if err != nil {
+			return err
+		}
+		r.noteScan(result)
+		return nil
+	}
+	server.RegisterRescan(scan)
+	r.runScan = func() {
+		go func() {
+			if err := scan(scanCtx); err != nil {
+				log.Printf("[SCANNER] rescan failed: %v", err)
+			}
+		}()
+	}
 
 	go func() {
-		result, err := sc.ScanAll(scanCtx)
-		if err != nil {
+		if err := scan(scanCtx); err != nil {
 			log.Printf("[SCANNER] initial scan failed: %v", err)
 			return
 		}
-		log.Printf("[SCANNER] initial scan completed: %d files, %d updated", result.Files, result.Updated)
+		r.mu.Lock()
+		summary := r.lastScan
+		r.mu.Unlock()
+		log.Printf("[SCANNER] initial scan completed: %s", summary)
 	}()
 
 	cleanup := func() {
@@ -171,7 +259,108 @@ func buildDataServer(root string) (http.Handler, func(), error) {
 		music.Close()
 	}
 
-	return server, cleanup, nil
+	return &dataServer{handler: server, cleanup: cleanup}, nil
+}
+
+// noteScan records a finished scan for the TUI.
+func (r *serverRuntime) noteScan(result scanner.Result) {
+	if result.InProgress {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastScan = fmt.Sprintf("%d files, %d updated, %d removed (%s)",
+		result.Files, result.Updated, result.Removed, result.Elapsed.Truncate(time.Millisecond))
+}
+
+// setFatal records a listener failure so the TUI can show it.
+func (r *serverRuntime) setFatal(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fatalErr = err
+}
+
+// rescan triggers a library scan from the TUI. Nil-safe: with --web-only there
+// is no scanner, and the TUI hides the key.
+func (r *serverRuntime) rescan() {
+	if r.runScan != nil {
+		r.runScan()
+	}
+}
+
+// snapshot collects the figures the TUI shows. Called once per second, so it
+// stays on cheap aggregate queries and tolerates a database that is busy.
+func (r *serverRuntime) snapshot() tui.Snapshot {
+	var snap tui.Snapshot
+
+	r.mu.Lock()
+	snap.LastScanText = r.lastScan
+	snap.Err = r.fatalErr
+	r.mu.Unlock()
+
+	if r.scanner != nil {
+		snap.Scanning = r.scanner.Scanning()
+		snap.MusicDir = r.scanner.MusicDir()
+	}
+	if r.music == nil {
+		return snap
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if stats, err := r.music.GetStats(ctx); err == nil {
+		snap.Tracks = stats.TotalTracks
+		snap.Artists = stats.TotalArtists
+		snap.Albums = stats.TotalAlbums
+		snap.Genres = stats.TotalGenres
+		if stats.TotalDuration != nil {
+			snap.Duration = time.Duration(*stats.TotalDuration) * time.Second
+		}
+	}
+	if plays, err := r.music.GetPlayStats(ctx); err == nil && plays.TotalPlays != nil {
+		snap.Plays = *plays.TotalPlays
+	}
+	if r.app != nil {
+		if queue, err := r.app.GetQueueStats(ctx); err == nil {
+			snap.Sessions = queue.ActiveSessions
+		}
+		if id, _ := r.app.GetSetting("spotify", "clientId", "").(string); id != "" {
+			snap.SpotifyConfigured = true
+		}
+	}
+	if r.spotify != nil {
+		if status, err := r.spotify.Status(ctx); err == nil {
+			snap.SpotifyConnected = status.Connected
+			if status.Connected {
+				snap.SpotifyConfigured = true
+			}
+			if status.ExpiresAt > 0 {
+				snap.SpotifyExpires = time.UnixMilli(status.ExpiresAt)
+			}
+		}
+	}
+	return snap
+}
+
+// fatal reports a startup failure. Under the TUI the log goes to the sink that
+// nobody is draining yet, so the message has to reach stderr directly.
+func fatal(useTUI bool, format string, args ...any) {
+	if useTUI {
+		log.SetOutput(os.Stderr)
+	}
+	log.Fatalf(format, args...)
+}
+
+// isTerminal reports whether f is an interactive terminal. Redirected output -
+// a log file, a pipe, a service manager - is not, and must keep the plain
+// logger rather than a TUI drawing escape sequences into a file.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 // normalizeRoot makes the project directory canonical enough that the same

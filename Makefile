@@ -8,6 +8,7 @@
 BINARY  := njukebox
 VERSION := 2026.08.13
 LDFLAGS := -s -w
+RELEASE := _release
 
 GO      ?= go
 export CGO_ENABLED = 0
@@ -20,19 +21,33 @@ all: build
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY)$(shell $(GO) env GOEXE) ./cmd/njukebox
 
+# package: stages a complete, runnable package - binary, web/, licenses, README
+# and the matching start/stop scripts - then zips it. The folder layout is what
+# the server expects at runtime: the binary next to web/. Needs Info-ZIP (zip).
+# $(1) = GOOS, $(2) = GOARCH, $(3) = binary name, $(4)/$(5) = start/stop script
+define package
+rm -rf $(RELEASE)/$(BINARY)-$(1)-$(2) $(RELEASE)/$(BINARY)-$(1)-$(2).zip
+mkdir -p $(RELEASE)/$(BINARY)-$(1)-$(2)
+GOOS=$(1) GOARCH=$(2) $(GO) build -ldflags "$(LDFLAGS)" -o $(RELEASE)/$(BINARY)-$(1)-$(2)/$(3) ./cmd/njukebox
+cp -R web $(RELEASE)/$(BINARY)-$(1)-$(2)/web
+cp LICENSE THIRD-PARTY-NOTICES.md README.md $(RELEASE)/$(BINARY)-$(1)-$(2)/
+cp $(4) $(5) $(RELEASE)/$(BINARY)-$(1)-$(2)/
+cd $(RELEASE) && zip -qr $(BINARY)-$(1)-$(2).zip $(BINARY)-$(1)-$(2)
+endef
+
 windows:
-	GOOS=windows GOARCH=amd64 $(GO) build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-windows-amd64.exe ./cmd/njukebox
+	$(call package,windows,amd64,$(BINARY).exe,start_jukebox.cmd,stop_jukebox.cmd)
 
 linux:
-	GOOS=linux GOARCH=amd64 $(GO) build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-linux-amd64 ./cmd/njukebox
+	$(call package,linux,amd64,$(BINARY),start_jukebox.sh,stop_jukebox.sh)
 
 macos:
-	GOOS=darwin GOARCH=amd64 $(GO) build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-darwin-amd64 ./cmd/njukebox
+	$(call package,darwin,amd64,$(BINARY),start_jukebox.sh,stop_jukebox.sh)
 
 macos-arm:
-	GOOS=darwin GOARCH=arm64 $(GO) build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)-darwin-arm64 ./cmd/njukebox
+	$(call package,darwin,arm64,$(BINARY),start_jukebox.sh,stop_jukebox.sh)
 
-## dist: all platforms at once
+## dist: complete release packages (ZIP) for all platforms into _release/
 dist: windows linux macos macos-arm
 
 test:
@@ -52,5 +67,5 @@ verify:
 	pwsh tools/verify_web.ps1
 
 clean:
-	rm -rf dist
+	rm -rf dist $(RELEASE)
 	rm -f $(BINARY) $(BINARY).exe

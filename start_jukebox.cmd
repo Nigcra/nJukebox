@@ -3,7 +3,7 @@ chcp 65001 >nul
 REM Delayed expansion is required for the readiness loop below.
 setlocal enabledelayedexpansion
 
-REM start_jukebox.bat
+REM start_jukebox.cmd
 REM Starts the server and opens the jukebox in a kiosk browser
 REM Version: 2026.08.13
 
@@ -65,7 +65,10 @@ if errorlevel 1 (
 )
 
 echo Starting server...
-start /B "" .\%BINARY%
+REM --no-tui on purpose: the server shares this console with the script, which
+REM keeps printing below. A TUI would take over the alt screen and the two would
+REM overwrite each other. Run the binary on its own to get the interface.
+start /B "" .\%BINARY% --no-tui
 
 echo Waiting for the server to answer...
 set READY=0

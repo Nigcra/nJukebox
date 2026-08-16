@@ -65,12 +65,40 @@ One binary serves both ports:
 ./njukebox --data-only     # only the data server
 ./njukebox --web-only      # only the web server
 ./njukebox --root <path>   # use another project directory
+./njukebox --no-tui        # plain logging instead of the terminal interface
 ```
+
+### Terminal interface
+
+Started in a terminal, the server comes up with a TUI instead of a wall of log
+lines:
+
+```
+╭─╮ ╶─╮ ╷ ╷ │ ╱ ╭─╮ ├─╮ ╭─╮ ╲ ╱
+│ │   │ │ │ ├─╴ ├── ├─┤ │ │  ╳
+╵ ╵ ╰─╯ ╰─╯ │ ╲ ╰─╯ ╰─╯ ╰─╯ ╱ ╲
+Nico's Jukebox
+
+ Dashboard   Library   Logs
+```
+
+- **Dashboard** - tracks, artists, albums, playtime, plays and the Spotify link
+  as a row of cards, plus both listener addresses, active sessions and uptime.
+- **Library** - scanner state, last scan summary, the library counters and the
+  music folder.
+- **Logs** - the server log, scrollable.
+
+`←/→` or `Tab` switches views, `1`–`3` jumps straight to one, `r` triggers a
+library rescan, `o` opens the interface in a browser and `q` quits.
+
+The TUI only appears on an interactive terminal. Redirected output - a log
+file, a pipe, a service manager - keeps the plain logger automatically, so
+nothing has to change for unattended starts; `--no-tui` forces that mode.
 
 **Kiosk mode:**
 
 ```batch
-start_jukebox.bat
+start_jukebox.cmd
 stop_jukebox.cmd
 ```
 
@@ -91,6 +119,10 @@ dev.cmd
 Same server, but a normal resizable window with DevTools already open and a
 separate browser profile, so inspecting or clearing storage never touches the
 kiosk session. The server log stays in the console; a key press stops it.
+
+The start and development scripts pass `--no-tui`: the server shares its console
+with the script, and a TUI would fight the script's own output for the screen.
+Run the binary on its own to get the terminal interface.
 
 ### The footer equalizer and Spotify
 
@@ -157,6 +189,7 @@ nJukeboxGO/
 │   ├── spotify/        # PKCE, token refresh and rotation
 │   ├── imaging/        # Cover scaling and artist mosaics
 │   ├── web/            # Static file server
+│   ├── tui/            # Terminal interface (Bubble Tea)
 │   ├── config/         # config.json
 │   └── jsonx/          # Order preserving JSON objects
 ├── web/                # Everything the browser loads - and nothing else
@@ -172,7 +205,7 @@ nJukeboxGO/
 
 ```bash
 make build              # current platform
-make dist               # Windows, Linux, macOS (Intel and ARM)
+make dist               # release packages (ZIP) for Windows, Linux, macOS into _release/
 make check              # fmt, vet and tests
 make verify             # full acceptance suite, needs PowerShell 7
 ```
@@ -184,9 +217,9 @@ covers the same ground without either:
 build.cmd            REM binary for this machine
 build.cmd check      REM gofmt, vet and the tests
 build.cmd all        REM check, then build
-build.cmd dist       REM Windows, Linux and macOS into dist\
+build.cmd dist       REM release packages (ZIP) into _release\
 build.cmd verify     REM the full acceptance suite, needs PowerShell 7
-build.cmd clean      REM remove the binary and dist\
+build.cmd clean      REM remove the binary, dist\ and _release\
 ```
 
 It refuses to overwrite a running server instead of failing with a bare access

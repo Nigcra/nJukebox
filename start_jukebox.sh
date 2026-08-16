@@ -45,7 +45,10 @@ echo "  found: ${BROWSER}"
 echo
 
 echo "Starting server..."
-"${BINARY}" &
+# --no-tui on purpose: the server shares this terminal with the script, which
+# keeps printing below. A TUI would take over the alt screen and the two would
+# overwrite each other. Run the binary on its own to get the interface.
+"${BINARY}" --no-tui &
 SERVER_PID=$!
 
 # Stop the server when this script ends, however it ends.

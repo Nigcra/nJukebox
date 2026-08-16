@@ -9,9 +9,9 @@ REM
 REM   build.cmd            binary for this machine
 REM   build.cmd check      gofmt, vet and the tests
 REM   build.cmd all        check, then build
-REM   build.cmd dist       Windows, Linux and macOS into dist\
+REM   build.cmd dist       complete release packages (ZIP) into _release\
 REM   build.cmd verify     the full acceptance suite, needs PowerShell 7
-REM   build.cmd clean      remove the binary and dist\
+REM   build.cmd clean      remove the binary, dist\ and _release\
 REM
 REM CGO stays off throughout. That is the whole point of the Go port: no native
 REM modules, no toolchain on the target machine, one file to copy.
@@ -59,7 +59,7 @@ for %%F in (%BINARY%) do set SIZE=%%~zF
 set /a MB=!SIZE! / 1048576
 echo   %BINARY%  !MB! MB
 echo.
-echo Done. Start with dev.cmd or start_jukebox.bat.
+echo Done. Start with dev.cmd or start_jukebox.cmd.
 exit /b 0
 
 
@@ -99,21 +99,25 @@ exit /b %ERRORLEVEL%
 
 
 :dist
-if not exist dist mkdir dist
-echo Building for all platforms...
+if exist _release rmdir /S /Q _release
+mkdir _release
+echo Building release packages for all platforms...
 echo.
 
-call :buildone windows amd64 njukebox-windows-amd64.exe
+call :buildone windows amd64 njukebox.exe
 if errorlevel 1 exit /b 1
-call :buildone linux   amd64 njukebox-linux-amd64
+call :buildone linux   amd64 njukebox
 if errorlevel 1 exit /b 1
-call :buildone darwin  amd64 njukebox-darwin-amd64
+call :buildone darwin  amd64 njukebox
 if errorlevel 1 exit /b 1
-call :buildone darwin  arm64 njukebox-darwin-arm64
+call :buildone darwin  arm64 njukebox
 if errorlevel 1 exit /b 1
 
 echo.
-echo Done. The binaries are in dist\ and need no runtime on the target.
+echo Done. The packages in _release\ contain everything the server needs at
+echo runtime: the binary, web\, the licenses and the start/stop scripts.
+echo On Linux and macOS run once after unzipping:
+echo   chmod +x njukebox start_jukebox.sh stop_jukebox.sh
 exit /b 0
 
 
@@ -149,19 +153,46 @@ exit /b 1
 
 
 :buildone
-REM %1 = GOOS, %2 = GOARCH, %3 = output file
+REM %1 = GOOS, %2 = GOARCH, %3 = binary name inside the package
+REM Stages a complete, runnable package - binary, web\, licenses, README and
+REM the matching start/stop scripts - then zips it. The folder layout is what
+REM the server expects at runtime: the binary next to web\.
 setlocal
+set PKG=njukebox-%~1-%~2
+set DEST=_release\%PKG%
+mkdir "%DEST%"
+
 set GOOS=%~1
 set GOARCH=%~2
-go build -ldflags "%LDFLAGS%" -o "dist\%~3" .\cmd\njukebox
+go build -ldflags "%LDFLAGS%" -o "%DEST%\%~3" .\cmd\njukebox
 if errorlevel 1 (
   echo   FAILED: %~1/%~2
   endlocal
   exit /b 1
 )
-for %%F in ("dist\%~3") do set SIZE=%%~zF
+
+xcopy /E /I /Q web "%DEST%\web" >nul
+copy /Y LICENSE "%DEST%" >nul
+copy /Y THIRD-PARTY-NOTICES.md "%DEST%" >nul
+copy /Y README.md "%DEST%" >nul
+if /I "%~1"=="windows" (
+  copy /Y start_jukebox.cmd "%DEST%" >nul
+  copy /Y stop_jukebox.cmd "%DEST%" >nul
+) else (
+  copy /Y start_jukebox.sh "%DEST%" >nul
+  copy /Y stop_jukebox.sh "%DEST%" >nul
+)
+
+powershell -NoProfile -Command "try { Compress-Archive -Path '_release\%PKG%' -DestinationPath '_release\%PKG%.zip' -Force -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+  echo   FAILED: zip for %PKG%
+  endlocal
+  exit /b 1
+)
+
+for %%F in ("_release\%PKG%.zip") do set SIZE=%%~zF
 set /a MB=!SIZE! / 1048576
-echo   %~1/%~2  ^-^>  dist\%~3  (!MB! MB^)
+echo   %~1/%~2  ^-^>  _release\%PKG%.zip  (!MB! MB^)
 endlocal
 exit /b 0
 
@@ -197,6 +228,10 @@ if exist dist (
   rmdir /S /Q dist
   echo   removed dist\
 )
+if exist _release (
+  rmdir /S /Q _release
+  echo   removed _release\
+)
 echo Clean.
 exit /b 0
 
@@ -207,8 +242,8 @@ echo.
 echo   build.cmd            binary for this machine
 echo   build.cmd check      gofmt, vet and the tests
 echo   build.cmd all        check, then build
-echo   build.cmd dist       Windows, Linux and macOS into dist\
+echo   build.cmd dist       complete release packages (ZIP) into _release\
 echo   build.cmd verify     the full acceptance suite, needs PowerShell 7
-echo   build.cmd clean      remove the binary and dist\
+echo   build.cmd clean      remove the binary, dist\ and _release\
 echo.
 exit /b 1

@@ -2,7 +2,7 @@
 
 **nJukebox** is a web-based jukebox application with local music library and Spotify integration. Built for personal use - may require customization for other scenarios.
 
-> **Now written in Go.** The application started as a Node.js project (the *n* in nJukebox) and has been completely rewritten in Go - for **performance** (native code, lower memory footprint, fast startup), **stability** (a single statically linked binary with no runtime dependencies that can break - no Node.js, no `node_modules`, no native modules) and **security** (a minimal dependency tree and a memory-safe, statically typed language). The web frontend is unchanged; the entire server side is Go.
+> **Now written in Go.** nJukebox (short for *Nico's Jukebox*) started as a Node.js project and has been completely rewritten in Go - for **performance** (native code, lower memory footprint, fast startup), **stability** (a single statically linked binary with no runtime dependencies that can break - no Node.js, no `node_modules`, no native modules) and **security** (a minimal dependency tree and a memory-safe, statically typed language). The web frontend is unchanged; the entire server side is Go.
 
 ## 📸 Screenshots
 

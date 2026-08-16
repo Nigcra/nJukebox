@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<!-- spotify_login.html -->
+<!-- Spotify PKCE login page, hands code and verifier to the data server -->
+<!-- Version: 2026.08.13 -->
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<title>Spotify Login</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<style>
+		body { background: #181818; color: #f3f3f3; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+		#loginBox { background: #222; padding: 2rem; border-radius: 1rem; box-shadow: 0 0 20px #0008; }
+		button { background: #1DB954; color: #181818; border: none; border-radius: 0.3rem; padding: 0.7rem 1.5rem; font-size: 1.1rem; cursor: pointer; }
+		button:hover { background: #1ed760; }
+		#msg { margin-top: 1rem; color: #1DB954; }
+		#msg.error { color: #ff6b6b; }
+	</style>
+</head>
+<body>
+	<div id="loginBox">
+		<h2>Spotify Login</h2>
+		<button id="loginBtn">Mit Spotify verbinden</button>
+		<div id="msg"></div>
+	</div>
+	<script>
+		// The data server owns the tokens. This page only obtains the
+		// authorization code and hands it over together with the PKCE verifier.
+		// Nothing token related is ever written to localStorage or sessionStorage.
+		const DATA_SERVER = 'http://127.0.0.1:3001';
+		const REDIRECT_URI = window.location.origin + '/spotify_login.html';
+		const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing streaming user-read-email user-read-private';
+		const VERIFIER_KEY = 'spotify_code_verifier';
+
+		const loginBtn = document.getElementById('loginBtn');
+		const msg = document.getElementById('msg');
+
+		// There is no hardcoded fallback: without a configured client id the
+		// login stays disabled.
+		let clientId = null;
+
+		const showMessage = (text, isError = false) => {
+			msg.textContent = text;
+			msg.classList.toggle('error', isError);
+		};
+
+		const getParam = (name) => new URLSearchParams(window.location.search).get(name);
+
+		// RFC 7636 code verifier, 43 to 128 characters from the allowed set
+		const generateCodeVerifier = (length = 128) => {
+			const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+			const array = new Uint8Array(length);
+			window.crypto.getRandomValues(array);
+			return Array.from(array).map(value => chars.charAt(value % chars.length)).join('');
+		};
+
+		// SHA-256 of the verifier, base64url encoded
+		const pkceChallengeFromVerifier = async (verifier) => {
+			const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+			return btoa(String.fromCharCode(...new Uint8Array(digest)))
+				.replace(/\+/g, '-')
+				.replace(/\//g, '_')
+				.replace(/=+$/, '');
+		};
+
+		const loadClientId = async () => {
+			try {
+				const response = await fetch(`${DATA_SERVER}/api/settings/spotify/clientId`);
+				if (!response.ok) {
+					showMessage('Client ID konnte nicht geladen werden.', true);
+					loginBtn.disabled = true;
+					return false;
+				}
+
+				const data = await response.json();
+				if (!data.success || !data.value) {
+					showMessage('Keine Spotify Client ID konfiguriert. Bitte in den Admin-Einstellungen hinterlegen.', true);
+					loginBtn.disabled = true;
+					return false;
+				}
+
+				clientId = data.value;
+				return true;
+			} catch (error) {
+				showMessage('Verbindung zum Data-Server fehlgeschlagen. Läuft njukebox?', true);
+				loginBtn.disabled = true;
+				return false;
+			}
+		};
+
+		const startAuth = async () => {
+			if (!clientId) {
+				showMessage('Kein Login möglich: keine Client ID verfügbar.', true);
+				return;
+			}
+
+			const verifier = generateCodeVerifier(128);
+			const challenge = await pkceChallengeFromVerifier(verifier);
+			sessionStorage.setItem(VERIFIER_KEY, verifier);
+
+			const params = new URLSearchParams({
+				response_type: 'code',
+				client_id: clientId,
+				scope: SCOPES,
+				redirect_uri: REDIRECT_URI,
+				code_challenge_method: 'S256',
+				code_challenge: challenge
+			});
+			window.location.href = 'https://accounts.spotify.com/authorize?' + params.toString();
+		};
+
+		// After a successful login the popup simply closes. The opener notices
+		// that and reconnects; no token is passed around between windows.
+		const finish = () => {
+			showMessage('Login erfolgreich.');
+			if (window.opener) {
+				setTimeout(() => window.close(), 800);
+				return;
+			}
+			setTimeout(() => { window.location = 'jukebox.html'; }, 800);
+		};
+
+		const handleRedirect = async () => {
+			const error = getParam('error');
+			if (error) {
+				showMessage('Spotify hat den Login abgelehnt: ' + error, true);
+				return;
+			}
+
+			const code = getParam('code');
+			if (!code) return;
+
+			const verifier = sessionStorage.getItem(VERIFIER_KEY);
+			if (!verifier) {
+				showMessage('Kein Code-Verifier gefunden. Bitte den Login erneut starten.', true);
+				return;
+			}
+
+			showMessage('Anmeldung wird abgeschlossen...');
+			try {
+				const response = await fetch(`${DATA_SERVER}/api/spotify/auth/callback`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: REDIRECT_URI })
+				});
+				const data = await response.json();
+
+				// The verifier is single use, so it goes either way.
+				sessionStorage.removeItem(VERIFIER_KEY);
+
+				if (!response.ok || !data.success) {
+					showMessage('Token-Abruf fehlgeschlagen: ' + (data.error || response.status), true);
+					return;
+				}
+
+				finish();
+			} catch (requestError) {
+				showMessage('Token-Abruf fehlgeschlagen: ' + requestError, true);
+			}
+		};
+
+		const init = async () => {
+			// /spotify_player is rewritten to this file; redirect once so the
+			// redirect_uri matches the one registered in the dashboard.
+			if (window.location.pathname === '/spotify_player' && !sessionStorage.getItem('redirectedToHtml')) {
+				sessionStorage.setItem('redirectedToHtml', '1');
+				window.location.replace(window.location.origin + '/spotify_login.html' + window.location.search);
+				return;
+			}
+			sessionStorage.removeItem('redirectedToHtml');
+
+			loginBtn.onclick = startAuth;
+			await loadClientId();
+			await handleRedirect();
+		};
+
+		init();
+	</script>
+</body>
+</html>

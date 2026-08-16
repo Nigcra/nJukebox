@@ -1,0 +1,8 @@
+# Never touch line endings.
+#
+# The repository holds both conventions: jukebox.html and style.css came over
+# from the original project with CRLF, everything written since uses LF. Letting
+# git normalise would rewrite whole files on checkout or commit and bury real
+# changes - an editor did exactly that to jukebox.html once, turning a one line
+# edit into 1466. Storing the bytes as they are keeps diffs honest.
+* -text

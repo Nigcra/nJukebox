@@ -237,7 +237,16 @@
       "clearDatabaseFinal": "Are you REALLY sure? This action CANNOT be undone!",
       "reportOpened": "📄 Report opened in new window - use \"Print\" > \"Save as PDF\"",
       "cannotRemoveCurrentTrack": "The currently playing track cannot be removed.",
-      "trackRemovedFromPlaylist": "\"{title}\" removed from playlist!"
+      "trackRemovedFromPlaylist": "\"{title}\" removed from playlist!",
+      "searchResultsFor": "Search results for \"{query}\"",
+      "searchResultCount": "{count} results",
+      "searchNoResultsFor": "No results for \"{query}\"",
+      "searchNoResultsHint": "Try different search terms or check the Spotify connection.",
+      "spotifySearchFailed": "Spotify search failed: {status}",
+      "spotifySearchError": "Spotify search failed",
+      "spotifySessionExpired": "Spotify session expired. Please log in again.",
+      "spotifyAuthRequired": "Spotify login required",
+      "spotifyUrlRequired": "Spotify URL is required"
     },
     "admin": {
       "report": {

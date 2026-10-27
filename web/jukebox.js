@@ -3762,6 +3762,9 @@ async function searchMusicServer(query) {
   }
 }
 
+// Bis wann die Spotify-Suche nach einem 429 still bleibt (Zeitstempel in ms).
+let spotifySearchPausedUntil = 0;
+
 async function searchSpotifyDirect(query) {
   // Get token via window property getter from spotify.js module
   const accessToken = window.spotifyAccessToken;
@@ -3771,6 +3774,13 @@ async function searchSpotifyDirect(query) {
     return []; 
   }
   
+  // Nach einem 429 bleibt die Suche kurz still, statt mit jedem Tastendruck
+  // weiter gegen die Drosselung zu laufen.
+  if (Date.now() < spotifySearchPausedUntil) {
+    debugLog('SPOTIFY', 'Spotify search paused after rate limit');
+    return [];
+  }
+
   debugLog('[DEBUG] Spotify search for:', query);
   try {
     let items;
@@ -3781,12 +3791,19 @@ async function searchSpotifyDirect(query) {
         console.warn('[DEBUG] Spotify token invalid/expired, deleting token and requesting re-login');
         // Clear invalid token
         clearSpotifyData();
-        toast.error('Spotify-Session abgelaufen. Bitte neu anmelden!');
+        toast.error(window.i18nSystem.t('ui.messages.spotifySessionExpired', 'Spotify session expired. Please log in again.'));
+        return [];
+      }
+      if (e.status === 429) {
+        // Spotify nennt die Wartezeit in Retry-After; ohne Header 10 Sekunden.
+        const seconds = e.retryAfter || 10;
+        spotifySearchPausedUntil = Date.now() + seconds * 1000;
+        debugLog('SPOTIFY', `Spotify search rate limited, pausing for ${seconds}s`);
         return [];
       }
       if (!e.status) throw e;
       console.error('[DEBUG] Spotify-Suche fehlgeschlagen:', e.status, e.body);
-      toast.error(`Spotify-Suche fehlgeschlagen: ${e.status}`);
+      toast.error(window.i18nSystem.t('ui.messages.spotifySearchFailed', 'Spotify search failed: {status}').replace('{status}', e.status));
       return [];
     }
 
@@ -3811,7 +3828,7 @@ async function searchSpotifyDirect(query) {
     return tracks;
   } catch(e){ 
     console.error('[DEBUG] Spotify-Suche Exception:', e); 
-    toast.error('Spotify-Suche fehlgeschlagen');
+    toast.error(window.i18nSystem.t('ui.messages.spotifySearchError', 'Spotify search failed'));
     return []; 
   }
 }
@@ -4189,7 +4206,16 @@ async function initialize(){
   
   // Initialize Spotify Auto-Learning buttons
   initializeSpotifyAutoLearning();
-  let searchTimeout; 
+  // Wartezeit nach dem letzten Tastendruck, bevor gesucht wird. Etwas laenger
+  // als die urspruenglichen 200 ms, weil jede Suche bis zu zwei Spotify-Anfragen
+  // kostet; 400 ms fuehlten sich aber schon traege an. Lokal und Spotify laufen
+  // bewusst in einem Rutsch: Spotify-Treffer getrennt nachzuschieben liesse die
+  // Liste springen, weil sie oben eingefuegt werden.
+  const SEARCH_DEBOUNCE_MS = 300;
+  let searchTimeout;
+  // Laufnummer der juengsten Suche. Antworten aelterer Suchen werden verworfen,
+  // sonst ueberschreibt "gre" die Treffer von "green", wenn es spaeter ankommt.
+  let searchSequence = 0; 
   searchInput.addEventListener('input', (evt) => { 
     clearTimeout(searchTimeout); 
     const q = evt.target.value.trim(); 
@@ -4199,12 +4225,15 @@ async function initialize(){
     
     if (q.length === 0) { 
       if (spotifyResultsEl) spotifyResultsEl.innerHTML=''; 
-      // Reset to current view when search is cleared
+      // Reset to current view when search is cleared. Eine noch laufende Suche
+      // darf die Bibliothek danach nicht mehr ueberschreiben.
+      searchSequence++;
       renderLibrary();
       return; 
     } 
     
     searchTimeout = setTimeout(async () => { 
+      const seq = ++searchSequence;
       debugLog('main', '[SEARCH] Searching for:', q);
       
       // Search both Data Server and Spotify in parallel
@@ -4215,6 +4244,7 @@ async function initialize(){
       
       try {
         const [serverTracks, spotifyTracks] = await Promise.all(searchPromises);
+        if (seq !== searchSequence) return; // inzwischen wurde weitergetippt
         
         // Use Search Module to render results
         if (typeof window.SearchModule !== 'undefined' && window.SearchModule.renderEnhancedSearchResults) {
@@ -4226,7 +4256,7 @@ async function initialize(){
       } catch (error) {
         console.error('[SEARCH] Search error:', error);
       }
-    }, 200); // Noch schnellere Reaktion 
+    }, SEARCH_DEBOUNCE_MS); 
   });
   // No "ended" listener here on purpose. js/audio.js already advances the queue
   // for whichever deck is the current one; a second one on this element skipped
@@ -5879,15 +5909,19 @@ function buildSpotifyQuery(filters) {
 // Client-IDs sind davon (noch) ausgenommen, deshalb fiel es lange nicht auf.
 const SPOTIFY_SEARCH_PAGE_SIZE = 10;
 
-// Holt bis zu total Titel einer Suchanfrage, in Seiten zu
-// SPOTIFY_SEARCH_PAGE_SIZE. Die Seiten laufen parallel; hat die Suche weniger
-// Treffer, kommen die hinteren einfach leer zurueck. query muss schon kodiert
-// sein. Schlaegt eine Seite fehl, traegt der Fehler status und body der Antwort.
-async function fetchSpotifySearchPages(query, total, accessToken) {
-  const offsets = [];
-  for (let offset = 0; offset < total; offset += SPOTIFY_SEARCH_PAGE_SIZE) offsets.push(offset);
+// Seiten, die sofort und parallel angefragt werden. Zwei Seiten sind die
+// normale Suche mit 20 Treffern; sie soll keinen zusaetzlichen Umlauf kosten.
+const SPOTIFY_SEARCH_EAGER_PAGES = 2;
 
-  const pages = await Promise.all(offsets.map(async (offset) => {
+// Holt bis zu wanted Titel einer Suchanfrage, in Seiten zu
+// SPOTIFY_SEARCH_PAGE_SIZE. Die ersten SPOTIFY_SEARCH_EAGER_PAGES Seiten laufen
+// sofort parallel. Werden mehr gebraucht, sagt danach total aus der ersten
+// Antwort, wie viele weitere Seiten es ueberhaupt gibt; sind die ersten Seiten
+// nicht voll, ist ohnehin Schluss. query muss schon kodiert sein. Schlaegt eine
+// Seite fehl, traegt der Fehler status, body und bei 429 die Wartezeit aus
+// Retry-After in Sekunden.
+async function fetchSpotifySearchPages(query, wanted, accessToken) {
+  const fetchPage = async (offset) => {
     const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=${SPOTIFY_SEARCH_PAGE_SIZE}&offset=${offset}&q=${query}`), {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
@@ -5896,13 +5930,28 @@ async function fetchSpotifySearchPages(query, total, accessToken) {
       const error = new Error(`Spotify API error: ${response.status}`);
       error.status = response.status;
       error.body = await response.text();
+      error.retryAfter = parseInt(response.headers.get('Retry-After'), 10) || 0;
       throw error;
     }
 
     const data = await response.json();
-    return data.tracks?.items || [];
-  }));
-  return pages.flat();
+    return data.tracks || {};
+  };
+
+  const pageOffsets = (from, to) => {
+    const offsets = [];
+    for (let offset = from; offset < to; offset += SPOTIFY_SEARCH_PAGE_SIZE) offsets.push(offset);
+    return offsets;
+  };
+
+  const eager = Math.min(wanted, SPOTIFY_SEARCH_EAGER_PAGES * SPOTIFY_SEARCH_PAGE_SIZE);
+  const firstPages = await Promise.all(pageOffsets(0, eager).map(fetchPage));
+  const items = firstPages.flatMap(page => page.items || []);
+  if (wanted <= eager || items.length < eager) return items;
+
+  const total = typeof firstPages[0].total === 'number' ? firstPages[0].total : wanted;
+  const pages = await Promise.all(pageOffsets(eager, Math.min(wanted, total)).map(offset => fetchPage(offset).then(page => page.items || [])));
+  return items.concat(...pages);
 }
 
 // Holt die ersten 50 Titel einer Suchanfrage.
@@ -6250,7 +6299,7 @@ async function learnFromSpotifyPlaylist(playlistId, name, category = 'general', 
   }
   
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
   
@@ -6338,7 +6387,7 @@ async function learnFromGenre(genre, name, category = 'general', button = null) 
 // beide Quellen gleich und soll es bleiben.
 async function learnTracks(fetchTracks, playlistId, name, category = 'general', button = null, emptyHint = 'die Suche trifft nichts.') {
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
 
@@ -6420,7 +6469,7 @@ async function learnFromSearch(query, playlistId, name, category = 'general', bu
 async function learnAllGermanyPlaylists() {
   const button = typeof event !== 'undefined' && event.target ? event.target : null;
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
   
@@ -6460,7 +6509,7 @@ async function learnAllGermanyPlaylists() {
 async function learnAllPartyPlaylists() {
   const button = typeof event !== 'undefined' && event.target ? event.target : null;
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
 
@@ -6613,7 +6662,7 @@ async function addCustomPlaylist() {
   const url = urlInput.value.trim();
 
   if (!url) {
-    toast.error('Spotify-URL ist erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyUrlRequired', 'Spotify URL is required'));
     return;
   }
 
@@ -6672,7 +6721,7 @@ async function loadCustomPlaylistById(id) {
   if (!playlist) return;
 
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
 
@@ -6739,7 +6788,7 @@ async function loadAllCustomPlaylists() {
   const button = typeof event !== 'undefined' && event.target ? event.target : null;
 
   if (!spotifyAccessToken) {
-    toast.error('Spotify-Authentifizierung erforderlich');
+    toast.error(window.i18nSystem.t('ui.messages.spotifyAuthRequired', 'Spotify login required'));
     return;
   }
   if (customPlaylists.length === 0) {

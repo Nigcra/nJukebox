@@ -237,7 +237,16 @@
       "clearDatabaseFinal": "Sind Sie WIRKLICH sicher? Diese Aktion kann NICHT rückgängig gemacht werden!",
       "reportOpened": "📄 Report in neuem Fenster geöffnet - verwenden Sie \"Drucken\" > \"Als PDF speichern\"",
       "cannotRemoveCurrentTrack": "Der aktuell spielende Titel kann nicht entfernt werden.",
-      "trackRemovedFromPlaylist": "\"{title}\" aus der Playlist entfernt!"
+      "trackRemovedFromPlaylist": "\"{title}\" aus der Playlist entfernt!",
+      "searchResultsFor": "Suchergebnisse für \"{query}\"",
+      "searchResultCount": "{count} Ergebnisse",
+      "searchNoResultsFor": "Keine Ergebnisse für \"{query}\"",
+      "searchNoResultsHint": "Versuchen Sie andere Suchbegriffe oder prüfen Sie die Spotify-Verbindung.",
+      "spotifySearchFailed": "Spotify-Suche fehlgeschlagen: {status}",
+      "spotifySearchError": "Spotify-Suche fehlgeschlagen",
+      "spotifySessionExpired": "Spotify-Session abgelaufen. Bitte neu anmelden!",
+      "spotifyAuthRequired": "Spotify-Anmeldung erforderlich",
+      "spotifyUrlRequired": "Spotify-URL ist erforderlich"
     },
     "admin": {
       "report": {

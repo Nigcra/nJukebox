@@ -209,8 +209,8 @@
       libraryList.innerHTML = `
         <li class="search-no-results">
           <div class="search-message">
-            <h3>🔍 Keine Ergebnisse für "${escapeHtml(query)}"</h3>
-            <p>Versuchen Sie andere Suchbegriffe oder prüfen Sie die Spotify-Verbindung.</p>
+            <h3>🔍 ${escapeHtml(tr('ui.messages.searchNoResultsFor', 'No results for "{query}"', { query }))}</h3>
+            <p>${escapeHtml(tr('ui.messages.searchNoResultsHint', 'Try different search terms or check the Spotify connection.'))}</p>
           </div>
         </li>
       `;
@@ -221,8 +221,8 @@
     libraryList.innerHTML = `
       <li class="search-header">
         <div class="search-info">
-          <h3>🔍 Suchergebnisse für "${escapeHtml(query)}"</h3>
-          <span class="search-count">${totalResults} Ergebnisse</span>
+          <h3>🔍 ${escapeHtml(tr('ui.messages.searchResultsFor', 'Search results for "{query}"', { query }))}</h3>
+          <span class="search-count">${escapeHtml(tr('ui.messages.searchResultCount', '{count} results', { count: totalResults }))}</span>
         </div>
       </li>
     `;
@@ -324,6 +324,17 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Helper: Translate with placeholders ({query}, {count})
+   */
+  function tr(key, fallback, vars = {}) {
+    let text = window.i18nSystem ? window.i18nSystem.t(key, fallback) : fallback;
+    for (const [name, value] of Object.entries(vars)) {
+      text = text.replace(`{${name}}`, value);
+    }
+    return text;
   }
   
   /**

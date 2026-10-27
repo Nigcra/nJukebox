@@ -174,6 +174,14 @@ Use `127.0.0.1`, not `localhost`. Spotify only accepts unencrypted HTTP redirect
 4. Enter your **Client ID**. No client secret is needed - authentication uses PKCE.
 5. Click the Spotify status indicator to log in
 
+Spotify apps start in **Development Mode**, and since February 2026 that comes with limits that are easy to run into:
+
+- **Spotify Premium** is required, for the account that owns the app and for everyone who logs in.
+- At most **5 Spotify accounts** can log in. For the Jukebox it doesn't matter: it plays through a single account, usually the one that owns the app, and that account is allowed automatically. Only if you log in with a different account does it have to be added under *User Management* in the app's settings on the dashboard first, otherwise the login ends in a 403.
+- Search returns at most **10 results per request**. nJukebox fetches results in pages of 10, so a search still shows up to 20 Spotify titles.
+
+Apps created before that date keep some of the old limits for now. Spotify has announced that the remaining changes will reach them as well.
+
 The server stores the tokens and renews them in the background. The login survives closing the browser, restarting the machine and days of kiosk operation. Nothing Spotify related is kept in browser storage.
 
 ## 📁 Project Structure

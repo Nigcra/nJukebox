@@ -3773,27 +3773,24 @@ async function searchSpotifyDirect(query) {
   
   debugLog('[DEBUG] Spotify search for:', query);
   try {
-    const res = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=20&q=${encodeURIComponent(query)}`), {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    
-    if (res.status === 401 || res.status === 403) {
-      console.warn('[DEBUG] Spotify token invalid/expired, deleting token and requesting re-login');
-      // Clear invalid token
-      clearSpotifyData();
-      toast.error('Spotify-Session abgelaufen. Bitte neu anmelden!');
+    let items;
+    try {
+      items = await fetchSpotifySearchPages(encodeURIComponent(query), 20, accessToken);
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) {
+        console.warn('[DEBUG] Spotify token invalid/expired, deleting token and requesting re-login');
+        // Clear invalid token
+        clearSpotifyData();
+        toast.error('Spotify-Session abgelaufen. Bitte neu anmelden!');
+        return [];
+      }
+      if (!e.status) throw e;
+      console.error('[DEBUG] Spotify-Suche fehlgeschlagen:', e.status, e.body);
+      toast.error(`Spotify-Suche fehlgeschlagen: ${e.status}`);
       return [];
     }
-    
-    if (!res.ok) { 
-      const t = await res.text(); 
-      console.error('[DEBUG] Spotify-Suche fehlgeschlagen:', res.status, t); 
-      toast.error(`Spotify-Suche fehlgeschlagen: ${res.status}`);
-      return []; 
-    }
-    
-    const data = await res.json();
-    const tracks = (data.tracks && data.tracks.items) ? data.tracks.items.map(item => {
+
+    const tracks = items.map(item => {
       let year=''; 
       if (item.album && item.album.release_date) year=item.album.release_date.slice(0,4);
       return { 
@@ -3809,7 +3806,7 @@ async function searchSpotifyDirect(query) {
         uri:item.uri,
         duration_ms: item.duration_ms || 0
       };
-    }) : [];
+    });
     debugLog('[DEBUG] Spotify-Suche Ergebnisse:', tracks.length, 'Tracks gefunden');
     return tracks;
   } catch(e){ 
@@ -5876,19 +5873,41 @@ function buildSpotifyQuery(filters) {
     .join('%20');
 }
 
-// Holt die Titel einer Suchanfrage. Mehr als 50 gibt die Suche ohnehin nicht
-// her, ohne durch die Seiten zu blaettern.
+// Seitengroesse der Spotify-Suche. Client-IDs, die seit Februar 2026 im
+// Development Mode angelegt wurden, bekommen hoechstens 10 Titel pro Anfrage;
+// ein groesseres limit beantwortet Spotify dort mit 400 "Invalid limit". Aeltere
+// Client-IDs sind davon (noch) ausgenommen, deshalb fiel es lange nicht auf.
+const SPOTIFY_SEARCH_PAGE_SIZE = 10;
+
+// Holt bis zu total Titel einer Suchanfrage, in Seiten zu
+// SPOTIFY_SEARCH_PAGE_SIZE. Die Seiten laufen parallel; hat die Suche weniger
+// Treffer, kommen die hinteren einfach leer zurueck. query muss schon kodiert
+// sein. Schlaegt eine Seite fehl, traegt der Fehler status und body der Antwort.
+async function fetchSpotifySearchPages(query, total, accessToken) {
+  const offsets = [];
+  for (let offset = 0; offset < total; offset += SPOTIFY_SEARCH_PAGE_SIZE) offsets.push(offset);
+
+  const pages = await Promise.all(offsets.map(async (offset) => {
+    const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=${SPOTIFY_SEARCH_PAGE_SIZE}&offset=${offset}&q=${query}`), {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!response.ok) {
+      const error = new Error(`Spotify API error: ${response.status}`);
+      error.status = response.status;
+      error.body = await response.text();
+      throw error;
+    }
+
+    const data = await response.json();
+    return data.tracks?.items || [];
+  }));
+  return pages.flat();
+}
+
+// Holt die ersten 50 Titel einer Suchanfrage.
 async function fetchSearchTracks(query) {
-  const response = await fetch(withSpotifyMarket(`https://api.spotify.com/v1/search?type=track&limit=50&q=${query}`), {
-    headers: { 'Authorization': `Bearer ${spotifyAccessToken}` }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Spotify API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.tracks?.items || [];
+  return fetchSpotifySearchPages(query, 50, spotifyAccessToken);
 }
 
 // Obergrenze fuer eine fest verdrahtete Playlist. Sie steht nur da, damit eine
